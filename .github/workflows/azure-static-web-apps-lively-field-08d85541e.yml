@@ -26,9 +26,10 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_NICE_WAVE_0EBF3D51E }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
-          app_location: "/" # App source code path
-          api_location: "api" # Api source code path - optional
-          output_location: "." # Set to the current directory for backend
+          app_location: "/"
+          api_location: "api"
+          output_location: "."
+          skip_deploy_on_missing_secrets: true # Optional setting to skip deploy if the token is missing
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
