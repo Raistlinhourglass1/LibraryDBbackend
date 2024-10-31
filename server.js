@@ -752,7 +752,7 @@ const server = http.createServer(async (req, res) => {
   req.on('end', async () => {
     try {
       const data = JSON.parse(body);
-      const { reservation_date_time, book_title, book_author, reservation_type } = data;
+      const { reservation_date_time, book_id, book_title, book_author, reservation_type } = data;
 
       if (!reservation_date_time || !book_title || !book_author || !reservation_type) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -776,8 +776,8 @@ const server = http.createServer(async (req, res) => {
         }
 
         const reservation_status = 'pending';
-        const insertBookSql = `INSERT INTO book_reservations (user_id, reservation_date_time, book_title, book_author, reservation_type, reservation_status) VALUES (?, ?, ?, ?, ?, ?)`;
-        const values = [userData.user_ID, reservation_date_time, book_title, book_author, reservation_type, reservation_status];
+        const insertBookSql = `INSERT INTO book_reservations (book_id, user_id, reservation_date_time, book_title, book_author, reservation_type, reservation_status) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+        const values = [book_id, userData.user_ID, reservation_date_time, book_title, book_author, reservation_type, reservation_status];
 
         connection.query(insertBookSql, values, (err, result) => {
           if (err) {
@@ -1342,4 +1342,3 @@ const port = process.env.PORT || 3000;
 server.listen(port, '0.0.0.0', () => {
   console.log(`Server running on port ${port}`);
 });
-
