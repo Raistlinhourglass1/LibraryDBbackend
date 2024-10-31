@@ -1340,6 +1340,6 @@ else if (req.method === 'POST' && req.url === '/SignIn') {
 });
 
 // Start the server
-server.listen(port, hostname, () => {
-  console.log(`Server running at http://${hostname}:${port}/`);
+server.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });
