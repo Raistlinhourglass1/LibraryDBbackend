@@ -2,8 +2,6 @@ const http = require('http');
 const mysql = require('mysql2');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const hostname = 'localhost';
-const port = 5000;
 const { parse } = require('querystring');
 const { URL } = require('url');
 
@@ -1340,6 +1338,8 @@ else if (req.method === 'POST' && req.url === '/SignIn') {
 });
 
 // Start the server
-server.listen(port, () => {
+const port = process.env.PORT || 3000;
+app.listen(port, '0.0.0.0', () => {
   console.log(`Server running on port ${port}`);
 });
+
