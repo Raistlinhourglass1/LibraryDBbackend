@@ -1160,7 +1160,7 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
 //Justins Code
 
  // Laptop Reservations Route
- if (req.method === 'GET' && parsedUrl.pathname === '/laptop_reservations') {
+ if (req.method === 'GET' && req.url === '/laptop_reservations') {
   try {
     console.log('Attempting to fetch laptop reservations...');
     
