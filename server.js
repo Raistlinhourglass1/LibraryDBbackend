@@ -1210,6 +1210,39 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
   }
 }
 
+  // Delete Profile Route
+  else if (req.method === 'DELETE' && req.url === '/DeleteProfile') {
+    console.log('Delete profile route hit!');
+
+    // Authenticate the user
+    const decoded = authenticateToken(req, res);
+    if (!decoded) return;
+
+    const userEmail = decoded.email; // Assuming the token includes the user's email
+
+    // Delete the user's profile from the database based on their email
+    const deleteQuery = 'DELETE FROM user WHERE email = ?';
+    connection.query(deleteQuery, [userEmail], (err, result) => {
+      if (err) {
+        console.error('Error deleting profile:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to delete profile' }));
+        return;
+      }
+
+      if (result.affectedRows === 0) {
+        // No rows affected, meaning the user was not found
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'User not found' }));
+      } else {
+        // Profile deletion successful
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Profile deleted successfully' }));
+      }
+    });
+  }
+
+
 
 
 
