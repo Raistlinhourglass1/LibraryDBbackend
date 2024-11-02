@@ -518,6 +518,8 @@ const server = http.createServer(async (req, res) => {
   });
   return;
 }
+
+
 //reports route
 else if (req.method === 'POST' && req.url === '/get-reports') {
   let body = '';
@@ -528,7 +530,7 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
 
   req.on('end', () => {
     const data = JSON.parse(body);
-    const { specification, date, user_id, book_name, book_isbn, staff_id } = data;
+    const { specification, date, user_id, book_name, book_isbn, staff_id, teach_email, laptop_id, calc_id, period_type, room_num } = data;
 
     let query = '';
     let params = [];
@@ -543,6 +545,10 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
         if (user_id) {
           query += ' AND user_id = ?';
           params.push(user_id);
+        }
+        if (room_num) {
+          query += ' AND room_number = ?';
+          params.push(room_num);
         }
         break;
 
@@ -576,10 +582,18 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
 
       case 'laptops':
         query = 'SELECT * FROM Laptops WHERE 1=1';
+        if (laptop_id) {
+          query += ' AND laptop_id = ?';
+          params.push(laptop_id);
+        }
         break;
 
       case 'calculators':
         query = 'SELECT * FROM Calculators WHERE 1=1';
+        if (calc_id) {
+          query += ' AND calculator_id = ?';
+          params.push(calc_id);
+        }
         break;
 
       case 'books':
@@ -614,6 +628,34 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
           }
           break;
 
+      case 'periodical':
+          query = 'SELECT * FROM periodical WHERE 1=1';
+          if (date) {
+            query += ' AND DATE(issue_date) = ?';
+            params.push(date);
+          }
+          if (period_type) {
+            query += ' AND periodical_type = ?';
+            params.push(period_type);
+          }
+          break;
+      
+      case 'ebook':
+          query = 'SELECT * FROM ebook WHERE 1=1';
+          if (date) {
+            query += ' AND DATE(date_added) = ?';
+            params.push(date);
+          }
+          if (book_name) {
+            query += ' AND ebook_title = ?';
+            params.push(book_name);
+          }
+          if (book_isbn) {
+            query += ' AND ebook_isbn = ?';
+            params.push(book_isbn);
+          }
+          break;
+
       case 'staff':
         query = 'SELECT * FROM staff WHERE 1=1';
         if (date) {
@@ -623,6 +665,14 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
         if (staff_id) {
           query += ' AND staff_id = ?';
           params.push(staff_id);
+        }
+        break;
+      
+      case 'teacher':
+        query = 'SELECT * FROM teacher WHERE 1=1';
+        if (teach_email) {
+          query += ' AND email = ?';
+          params.push(teach_email);
         }
         break;
 
@@ -661,6 +711,7 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
   });
   return;
 }
+
 
 
 
