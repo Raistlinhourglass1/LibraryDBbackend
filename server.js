@@ -1210,9 +1210,9 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
   }
 }
 
-  // Delete Profile Route
+  // soft Delete Profile Route
   else if (req.method === 'DELETE' && req.url === '/DeleteProfile') {
-    console.log('Delete profile route hit!');
+    console.log('Soft delete profile route hit!');
 
     // Authenticate the user
     const decoded = authenticateToken(req, res);
@@ -1220,11 +1220,11 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
 
     const userEmail = decoded.email; // Assuming the token includes the user's email
 
-    // Delete the user's profile from the database based on their email
-    const deleteQuery = 'DELETE FROM user WHERE email = ?';
-    connection.query(deleteQuery, [userEmail], (err, result) => {
+    // Perform a soft delete by setting is_deleted to true for the user's profile
+    const softDeleteQuery = 'UPDATE user SET is_deleted = TRUE WHERE email = ?';
+    connection.query(softDeleteQuery, [userEmail], (err, result) => {
       if (err) {
-        console.error('Error deleting profile:', err);
+        console.error('Error performing soft delete:', err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Failed to delete profile' }));
         return;
@@ -1235,9 +1235,9 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'User not found' }));
       } else {
-        // Profile deletion successful
+        // Profile soft deletion successful
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Profile deleted successfully' }));
+        res.end(JSON.stringify({ message: 'Profile marked as deleted successfully' }));
       }
     });
   }
