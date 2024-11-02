@@ -518,8 +518,8 @@ const server = http.createServer(async (req, res) => {
   });
   return;
 }
- //reports route
- else if (req.method === 'POST' && req.url === '/get-reports') {
+//reports route
+else if (req.method === 'POST' && req.url === '/get-reports') {
   let body = '';
 
   req.on('data', (chunk) => {
@@ -536,25 +536,108 @@ const server = http.createServer(async (req, res) => {
     switch (specification) {
       case 'room reservations':
         query = 'SELECT * FROM room_reservations WHERE 1=1';
+        if (date) {
+          query += ' AND DATE(reservation_date) = ?';
+          params.push(date);
+        }
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
         break;
+
+      case 'book reservations':
+        query = 'SELECT * FROM book_reservations WHERE 1=1';
+        if (date) {
+          query += ' AND DATE(reservation_date_time) = ?';
+          params.push(date);
+        }
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
+        if (book_name) {
+          query += ' AND book_title = ?';
+          params.push(book_name);
+        }
+        break;
+
       case 'feedback':
         query = 'SELECT * FROM feedback WHERE 1=1';
+        if (date) {
+          query += ' AND DATE(date_submitted) = ?';
+          params.push(date);
+        }
+        if (book_name) {
+          query += ' AND book_name = ?';
+          params.push(book_name);
+        }
         break;
+
       case 'laptops':
         query = 'SELECT * FROM Laptops WHERE 1=1';
         break;
+
       case 'calculators':
         query = 'SELECT * FROM Calculators WHERE 1=1';
         break;
+
       case 'books':
         query = 'SELECT * FROM book WHERE 1=1';
+        if (date) {
+          query += ' AND DATE(date_added) = ?';
+          params.push(date);
+        }
+        if (book_name) {
+          query += ' AND book_title = ?';
+          params.push(book_name);
+        }
+        if (book_isbn) {
+          query += ' AND isbn = ?';
+          params.push(book_isbn);
+        }
         break;
+
+      case 'audiobooks':
+          query = 'SELECT * FROM audiobook WHERE 1=1';
+          if (date) {
+            query += ' AND DATE(date_added) = ?';
+            params.push(date);
+          }
+          if (book_name) {
+            query += ' AND audio_title = ?';
+            params.push(book_name);
+          }
+          if (book_isbn) {
+            query += ' AND audio_isbn = ?';
+            params.push(book_isbn);
+          }
+          break;
+
       case 'staff':
         query = 'SELECT * FROM staff WHERE 1=1';
+        if (date) {
+          query += ' AND DATE(date_hired) = ?';
+          params.push(date);
+        }
+        if (staff_id) {
+          query += ' AND staff_id = ?';
+          params.push(staff_id);
+        }
         break;
+
       case 'users':
         query = 'SELECT * FROM user WHERE 1=1';
+        if (date) {
+          query += ' AND DATE(create_time) = ?';
+          params.push(date);
+        }
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
         break;
+
       default:
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
@@ -562,37 +645,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    //optional filtering added to the query if present (make sure formating is correct before)
-    if (date) {
-      query += ' AND DATE(reservation_date) = ?';
-      params.push(date);
-    }
-
-    if (user_id) {
-      query += ' AND user_id = ?';
-      params.push(user_id);
-    }
-
-    if (staff_id) {
-      query += ' AND staff_id = ?';
-      params.push(staff_id);
-    }
-
-    if (book_name) {
-      if (specification === 'feedback') {
-        query += ' AND book_name = ?';  
-        params.push(book_name);
-      } else if (specification === 'books') {
-        query += ' AND book_title = ?'; 
-        params.push(book_name);
-      }
-    }
-
-    if (book_isbn) {
-      query += ' AND isbn = ?';
-      params.push(book_isbn);
-    }
-
+    // Execute the query with the filtered parameters
     connection.query(query, params, (err, results) => {
       if (err) {
         console.error('Error fetching data: ', err);
