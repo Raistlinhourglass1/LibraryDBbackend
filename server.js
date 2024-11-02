@@ -1159,7 +1159,7 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
 
 //Justins Code
 
- // Laptop Reservations Route
+ // Laptop Reservations Table Route
  if (req.method === 'GET' && req.url === '/laptop_reservations') {
   try {
     console.log('Attempting to fetch laptop reservations...');
@@ -1184,7 +1184,31 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
     res.end(JSON.stringify({ error: 'An unexpected error occurred' }));
   }
 }
-
+ // Calculator Reservations Table  Route
+ if (req.method === 'GET' && req.url === '/calculator_reservations') {
+  try {
+    console.log('Attempting to fetch laptop reservations...');
+    
+    const query = `SELECT reservation_id, calculator_id, user_id, calc_type, model_name, reservation_date_time FROM calculator_reservations`;
+    
+    connection.query(query, (error, results) => {
+      if (error) {
+        console.error('Error fetching laptop reservations:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to retrieve laptop reservations' }));
+        return;
+      }
+      
+      console.log('Query executed successfully, results:', results);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(results));
+    });
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'An unexpected error occurred' }));
+  }
+}
 
 
 
