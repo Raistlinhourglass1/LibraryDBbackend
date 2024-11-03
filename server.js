@@ -339,6 +339,72 @@ const server = http.createServer(async (req, res) => {
 
                                                   //Nicks Code
 
+
+// Cancel reservation route
+else if (req.method === 'POST' && req.url === '/cancel-reservation') {
+  const userData = authenticateToken(req, res);
+  if (!userData) return;
+
+  let body = '';
+
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+
+  req.on('end', () => {
+    const data = JSON.parse(body);
+    const { reservationId, roomId } = data;  // Assuming the frontend provides the reservation ID and room ID
+
+    // Update reservation status to "canceled"
+    const updateReservationStatusSql = `
+      UPDATE room_reservations 
+      SET reservation_status = 'canceled' 
+      WHERE reservation_id = ? AND user_id = ?`;
+
+    connection.query(updateReservationStatusSql, [reservationId, userData.user_ID], (err, result) => {
+      if (err) {
+        console.error('Error updating reservation status: ', err);
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.end('Error canceling reservation');
+        }
+        return;
+      }
+
+      if (result.affectedRows === 0) {
+        // No matching reservation found for the user, return an error
+        if (!res.headersSent) {
+          res.statusCode = 404;
+          res.end('Reservation not found or already canceled');
+        }
+        return;
+      }
+
+      // Set the room status back to available (room_status = 0)
+      const updateRoomStatusSql = 'UPDATE rooms SET room_status = 0 WHERE room_id = ?';
+      connection.query(updateRoomStatusSql, [roomId], (err, result) => {
+        if (err) {
+          console.error('Error updating room status: ', err);
+          if (!res.headersSent) {
+            res.statusCode = 500;
+            res.end('Error updating room status');
+          }
+          return;
+        }
+
+        if (!res.headersSent) {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+        }
+      });
+    });
+  });
+  return;
+}
+
+
+
  // Create room route
  else if (req.method === 'POST' && req.url === '/create-room') {
   let body = '';
@@ -747,11 +813,11 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
 
 
   //JUSTINS CODE
-   // RoomReserveTable Route (temporarily without authenticateToken)
+  // RoomReserveTable Route (temporarily without authenticateToken)
   if (req.method === 'GET' && req.url === '/RoomReserveTable') {
     console.log("RoomReserveTable route hit!");
 
-    const query = 'SELECT reservation_id, user_id, reservation_date, room_number, reservation_duration_hrs, party_size FROM room_reservations';
+    const query = 'SELECT reservation_id, user_id, reservation_date, room_number, reservation_duration_hrs, reservation_status, party_size FROM room_reservations';
     connection.query(query, (err, results) => {
       if (res.headersSent) return;
 
