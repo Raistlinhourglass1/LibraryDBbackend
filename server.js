@@ -1407,7 +1407,7 @@ else if (req.method === 'PUT' && req.url === '/ProfilePage2') {
     });
   }
 
-  // SignIn Route
+ // SignIn Route
 else if (req.method === 'POST' && req.url === '/SignIn') {
   try {
     const { email, password } = await getRequestData(req);
@@ -1421,6 +1421,7 @@ else if (req.method === 'POST' && req.url === '/SignIn') {
       return;
     }
 
+    // Query the database for the user by email
     connection.query('SELECT * FROM user WHERE email = ?', [email], async (err, results) => {
       if (err) {
         console.error('Database query error:', err); // Log database query errors
@@ -1438,8 +1439,13 @@ else if (req.method === 'POST' && req.url === '/SignIn') {
 
       const user = results[0];
 
-      // Log the retrieved user details
-      console.log('User found:', user);
+      // Check if the user's account is marked as deleted
+      if (user.is_deleted) {
+        console.log('Account is deactivated'); // Log if account is deactivated
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Account is deactivated. Please contact support.' }));
+        return;
+      }
 
       // Compare the entered password with the hashed password in the database
       const isMatch = await bcrypt.compare(password, user.password);
