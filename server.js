@@ -363,50 +363,90 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
 
   req.on('end', () => {
     const data = JSON.parse(body);
-    const { reservationId, roomId } = data;  // Assuming the frontend provides the reservation ID and room ID
+    const { reservationId, roomId } = data;
 
-    // Update reservation status to "canceled"
-    const updateReservationStatusSql = `
-      UPDATE room_reservations 
-      SET reservation_status = 'canceled' 
+    // Check reservation status
+    const checkReservationStatusSql = `
+      SELECT reservation_status 
+      FROM room_reservations 
       WHERE reservation_id = ? AND user_id = ?`;
 
-    connection.query(updateReservationStatusSql, [reservationId, userData.user_ID], (err, result) => {
+    connection.query(checkReservationStatusSql, [reservationId, userData.user_ID], (err, results) => {
       if (err) {
-        console.error('Error updating reservation status: ', err);
+        console.error('Error checking reservation status: ', err);
         if (!res.headersSent) {
           res.statusCode = 500;
-          res.end('Error canceling reservation');
+          res.end('Error checking reservation status');
         }
         return;
       }
 
-      if (result.affectedRows === 0) {
-        // No matching reservation found for the user, return an error
+      // If no result is found or the reservation is not ongoing, return an error
+      if (results.length === 0) {
         if (!res.headersSent) {
           res.statusCode = 404;
-          res.end('Reservation not found or already canceled');
+          res.end('Reservation not found');
         }
         return;
       }
 
-      // Set the room status back to available (room_status = 0)
-      const updateRoomStatusSql = 'UPDATE rooms SET room_status = 0 WHERE room_id = ?';
-      connection.query(updateRoomStatusSql, [roomId], (err, result) => {
+      const reservationStatus = results[0].reservation_status;
+      if (reservationStatus === 'ended') {
+        if (!res.headersSent) {
+          res.statusCode = 400;
+          res.end('Reservation has already ended');
+        }
+        return;
+      } else if (reservationStatus !== 'ongoing') {
+        if (!res.headersSent) {
+          res.statusCode = 400;
+          res.end('Reservation has already been canceled');
+        }
+        return;
+      }
+
+      // If the reservation is ongoing, proceed with cancellation
+      const updateReservationStatusSql = `
+        UPDATE room_reservations 
+        SET reservation_status = 'canceled' 
+        WHERE reservation_id = ? AND user_id = ?`;
+
+      connection.query(updateReservationStatusSql, [reservationId, userData.user_ID], (err, result) => {
         if (err) {
-          console.error('Error updating room status: ', err);
+          console.error('Error updating reservation status: ', err);
           if (!res.headersSent) {
             res.statusCode = 500;
-            res.end('Error updating room status');
+            res.end('Error canceling reservation');
           }
           return;
         }
 
-        if (!res.headersSent) {
-          res.statusCode = 200;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+        if (result.affectedRows === 0) {
+          if (!res.headersSent) {
+            res.statusCode = 404;
+            res.end('Reservation not found or already canceled');
+          }
+          return;
         }
+
+        // Set the room status back to available (room_status = 0)
+        const updateRoomStatusSql = 'UPDATE rooms SET room_status = 0 WHERE room_id = ?';
+        connection.query(updateRoomStatusSql, [roomId], (err, result) => {
+          if (err) {
+            console.error('Error updating room status: ', err);
+            if (!res.headersSent) {
+              res.statusCode = 500;
+              res.end('Error updating room status');
+            }
+            return;
+          }
+
+          if (!res.headersSent) {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+          }
+        });
       });
     });
   });
@@ -507,15 +547,15 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
 
     req.on('end', () => {
       const data = JSON.parse(body);
-      const { roomId, partySize, reservationDateTime, duration } = data;
+      const { roomId, partySize, reservationDateTime, duration, reservationReason } = data;
 
       const insertReservationSql = `
-        INSERT INTO room_reservations (user_id, room_number, reservation_date, reservation_duration_hrs, party_size, reservation_status)
-        VALUES (?, ?, ?, ?, ?, ?)`;
+        INSERT INTO room_reservations (user_id, room_number, reservation_date, reservation_duration_hrs, party_size, reservation_status, reservation_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`;
 
-        const values = [userData.user_ID, roomId, reservationDateTime, duration, partySize, 'ongoing'];
+        const values = [userData.user_ID, roomId, reservationDateTime, duration, partySize, 'ongoing', reservationReason];
 
-      //status should be set to ongoing. if reservation is canceled thru user profile or reservation has ended, status must change
+      //status should be set to ongoing
       connection.query(insertReservationSql, values, (err, result) => {
         if (err) {
           console.error('Error inserting reservation: ', err);
@@ -548,6 +588,8 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
     });
     return;
   }
+
+
   //feedback route
   else if (req.method === 'POST' && req.url === '/feedback') {
     const userData = authenticateToken(req, res);
@@ -842,12 +884,11 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
 
 
 
-  //JUSTINS CODE
   // RoomReserveTable Route (temporarily without authenticateToken)
   if (req.method === 'GET' && req.url === '/RoomReserveTable') {
     console.log("RoomReserveTable route hit!");
 
-    const query = 'SELECT reservation_id, user_id, reservation_date, room_number, reservation_duration_hrs, reservation_status, party_size FROM room_reservations';
+    const query = 'SELECT reservation_id, user_id, reservation_date, room_number, reservation_duration_hrs, reservation_status, party_size, reservation_reason FROM room_reservations';
     connection.query(query, (err, results) => {
       if (res.headersSent) return;
 
