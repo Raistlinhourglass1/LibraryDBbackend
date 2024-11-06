@@ -1348,6 +1348,7 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
 //Justins Code
 
 
+
 // Overdue email notification route
 else if (req.method === 'POST' && req.url === '/send-overdue-email') {
   let body = '';
@@ -1358,7 +1359,7 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
 
   req.on('end', async () => {
     try {
-      const { userEmail, reservationDetails } = JSON.parse(body);  // Expecting userEmail and reservationDetails in the request body
+      const { userEmail, reservationDetails } = JSON.parse(body);
 
       if (!userEmail || !reservationDetails) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1366,14 +1367,16 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
         return;
       }
 
-      // Configure Nodemailer transport
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',  // Use your email service here (like 'gmail', 'yahoo', etc.)
-        auth: {
-          user: process.env.EMAIL_USER,  // Make sure to set this in your environment variables
-          pass: process.env.EMAIL_PASS   // Make sure to set this in your environment variables
-        }
-      });
+// Configure Nodemailer transport for Outlook
+const transporter = nodemailer.createTransport({
+  host: 'smtp-mail.outlook.com',
+  port: 587,
+  secure: false,  // use STARTTLS
+  auth: {
+    user: process.env.EMAIL_USER,  // Outlook email address
+    pass: process.env.EMAIL_PASS   // Outlook email password
+  }
+});
 
       // Email message options
       const mailOptions = {
@@ -1403,6 +1406,9 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
     }
   });
 }
+
+
+
 
 
  // Laptop Reservations Table Route
