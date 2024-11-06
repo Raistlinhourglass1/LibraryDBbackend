@@ -982,9 +982,8 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
   });
 }
 
- // Book Reservation Route
- else if (req.method === 'POST' && req.url === '/_bookReservation') {
-
+// Book Reservation Route
+else if (req.method === 'POST' && req.url === '/_bookReservation') {
   const userData = authenticateToken(req, res);
   if(!userData) return;
 
@@ -993,42 +992,95 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
   req.on('end', async () => {
     try {
       const data = JSON.parse(body);
-      const { reservation_date_time, book_id, book_title, book_author, reservation_type } = data;
+      const { book_id, book_title, book_author, reservation_type } = data;
 
-      if (!reservation_date_time || !book_title || !book_author || !reservation_type) {
+      if (!book_title || !book_author || !reservation_type) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'All fields are required' }));
         return;
       }
 
-      const checkDuplicateSql = `SELECT * FROM book_reservations WHERE book_title = ? AND book_author = ? AND reservation_date_time = ?`;
-      connection.query(checkDuplicateSql, [book_title, book_author, reservation_date_time], (err, results) => {
+      // Check for existing reservations for this book on this date
+      const checkExistingReservations = `
+        SELECT COUNT(*) as count 
+        FROM book_reservations 
+        WHERE book_title = ? 
+        AND book_author = ?  
+        AND reservation_status = 'pending'`;
+
+      connection.query(checkExistingReservations, [book_title, book_author], (err, results) => {
         if (err) {
-          console.error('Error checking duplicates:', err);
+          console.error('Error checking existing reservations:', err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ message: 'Error checking reservation availability' }));
           return;
         }
 
-        if (results.length > 0) {
-          res.writeHead(409, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'This book is already reserved for the selected date' }));
-          return;
-        }
+        const existingReservationsCount = results[0].count;
+        const newQueuePosition = existingReservationsCount; // This will be 0 if first reservation, 1 if second, etc.
 
-        const reservation_status = 'pending';
-        const insertBookSql = `INSERT INTO book_reservations (book_id, user_id, reservation_date_time, book_title, book_author, reservation_type, reservation_status) VALUES (?, ?, ?, ?, ?, ?, ?)`;
-        const values = [book_id, userData.user_ID, reservation_date_time, book_title, book_author, reservation_type, reservation_status];
+        // Check if user already has a reservation for this book on this date
+        const checkUserReservation = `
+          SELECT COUNT(*) as count 
+          FROM book_reservations 
+          WHERE book_title = ? 
+          AND book_author = ? 
+          AND user_id = ? 
+          AND reservation_status = 'pending'`;
 
-        connection.query(insertBookSql, values, (err, result) => {
-          if (err) {
-            console.error('Error inserting reservation:', err);
+        connection.query(checkUserReservation, [book_title, book_author, userData.user_ID], (userErr, userResults) => {
+          if (userErr) {
+            console.error('Error checking user reservation:', userErr);
             res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'Error creating reservation' }));
+            res.end(JSON.stringify({ message: 'Error checking user reservation' }));
             return;
           }
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Reservation created successfully', reservation_id: result.insertId }));
+
+          if (userResults[0].count > 0) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'You already have a reservation for this book on this date' }));
+            return;
+          }
+
+          // Proceed with creating the new reservation
+          const reservation_status = 'pending';
+          const insertBookSql = `
+            INSERT INTO book_reservations (
+              book_id, 
+              user_id,  
+              book_title, 
+              book_author, 
+              reservation_type, 
+              reservation_status,
+              queue_position
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+          const values = [
+            book_id, 
+            userData.user_ID,
+            book_title, 
+            book_author, 
+            reservation_type, 
+            reservation_status,
+            newQueuePosition
+          ];
+
+          connection.query(insertBookSql, values, (insertErr, result) => {
+            if (insertErr) {
+              console.error('Error inserting reservation:', insertErr);
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ message: 'Error creating reservation' }));
+              return;
+            }
+
+            // Return success response with queue position
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ 
+              message: existingReservationsCount > 0 ? 'Added to reservation queue' : 'Reservation created successfully',
+              reservation_id: result.insertId,
+              queue_position: newQueuePosition
+            }));
+          });
         });
       });
     } catch (error) {
@@ -1038,7 +1090,6 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
     }
   });
 }
-
 
 
 
