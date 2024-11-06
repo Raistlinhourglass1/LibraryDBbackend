@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { parse } = require('querystring');
 const { URL } = require('url');
+const nodemailer = require('nodemailer');
 
 
 // JWT secret key
@@ -25,6 +26,15 @@ connection.connect((err) => {
   }
   console.log('Connected to MySQL database as id ' + connection.threadId);
 });
+
+
+
+
+
+
+
+
+
 
 // Helper function to parse incoming JSON body
 const getRequestData = (req) => {
@@ -1244,6 +1254,64 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
 
 
 //Justins Code
+
+
+// Overdue email notification route
+else if (req.method === 'POST' && req.url === '/send-overdue-email') {
+  let body = '';
+
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+
+  req.on('end', async () => {
+    try {
+      const { userEmail, reservationDetails } = JSON.parse(body);  // Expecting userEmail and reservationDetails in the request body
+
+      if (!userEmail || !reservationDetails) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Missing email or reservation details' }));
+        return;
+      }
+
+      // Configure Nodemailer transport
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',  // Use your email service here (like 'gmail', 'yahoo', etc.)
+        auth: {
+          user: process.env.EMAIL_USER,  // Make sure to set this in your environment variables
+          pass: process.env.EMAIL_PASS   // Make sure to set this in your environment variables
+        }
+      });
+
+      // Email message options
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: userEmail,
+        subject: 'Your Laptop Reservation is Overdue!',
+        text: `Your reservation for Laptop ID ${reservationDetails.laptop_id} is overdue by ${reservationDetails.overdueDays} days. Please return it as soon as possible.`,
+      };
+
+      // Send the email
+      transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+          console.error('Error sending overdue email:', error);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Failed to send overdue email', error: error.message }));
+          return;
+        }
+
+        console.log('Overdue email sent:', info.response);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Overdue email sent successfully' }));
+      });
+    } catch (error) {
+      console.error('Error processing overdue email request:', error);
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
+    }
+  });
+}
+
 
  // Laptop Reservations Table Route
  if (req.method === 'GET' && req.url === '/laptop_reservations') {
