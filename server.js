@@ -1348,7 +1348,7 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
 //Justins Code
 
 
-
+// email code
 else if (req.method === 'POST' && req.url === '/send-overdue-email') {
   let body = '';
 
@@ -1361,7 +1361,8 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
       const { userEmail, reservationDetails } = JSON.parse(body);
       console.log("Received request body:", { userEmail, reservationDetails });
 
-      if (!userEmail || !reservationDetails || !reservationDetails.laptop_id || reservationDetails.overdueDays == null) {
+      // Check for the presence of required fields
+      if (!userEmail || !reservationDetails || !reservationDetails.reservation_id || reservationDetails.overdueDays == null) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Missing email or reservation details' }));
         return;
@@ -1378,12 +1379,12 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
         }
       });
 
-      // Email message options
+      // Update the email message options
       const mailOptions = {
         from: process.env.EMAIL_USER,
         to: userEmail,
         subject: 'Your Laptop Reservation is Overdue!',
-        text: `Your reservation for Laptop ID ${reservationDetails.laptop_id} is overdue by ${reservationDetails.overdueDays} days. Please return it as soon as possible.`,
+        text: `Your reservation with Reservation ID ${reservationDetails.reservation_id} is overdue by ${reservationDetails.overdueDays} days. Please return it as soon as possible.`,
       };
 
       // Send the email using async/await
