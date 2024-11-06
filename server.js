@@ -1349,7 +1349,6 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
 
 
 
-// Overdue email notification route
 else if (req.method === 'POST' && req.url === '/send-overdue-email') {
   let body = '';
 
@@ -1361,22 +1360,22 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
     try {
       const { userEmail, reservationDetails } = JSON.parse(body);
 
-      if (!userEmail || !reservationDetails) {
+      if (!userEmail || !reservationDetails || !reservationDetails.laptop_id || reservationDetails.overdueDays == null) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Missing email or reservation details' }));
         return;
       }
 
-// Configure Nodemailer transport for Outlook
-const transporter = nodemailer.createTransport({
-  host: 'smtp-mail.outlook.com',
-  port: 587,
-  secure: false,  // use STARTTLS
-  auth: {
-    user: process.env.EMAIL_USER,  // Outlook email address
-    pass: process.env.EMAIL_PASS   // Outlook email password
-  }
-});
+      // Configure Nodemailer transport for Outlook
+      const transporter = nodemailer.createTransport({
+        host: 'smtp-mail.outlook.com',
+        port: 587,
+        secure: false,  // Use STARTTLS
+        auth: {
+          user: process.env.EMAIL_USER,  // Outlook email address
+          pass: process.env.EMAIL_PASS   // Outlook email password
+        }
+      });
 
       // Email message options
       const mailOptions = {
@@ -1386,27 +1385,20 @@ const transporter = nodemailer.createTransport({
         text: `Your reservation for Laptop ID ${reservationDetails.laptop_id} is overdue by ${reservationDetails.overdueDays} days. Please return it as soon as possible.`,
       };
 
-      // Send the email
-      transporter.sendMail(mailOptions, (error, info) => {
-        if (error) {
-          console.error('Error sending overdue email:', error);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Failed to send overdue email', error: error.message }));
-          return;
-        }
-
-        console.log('Overdue email sent:', info.response);
+      // Send the email using async/await
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log('Overdue email sent successfully');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Overdue email sent successfully' }));
-      });
+      } catch (error) {
+        console.error('Error sending overdue email:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Failed to send overdue email', error: error.message }));
+      }
     } catch (error) {
       console.error('Error processing overdue email request:', error);
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: 'Invalid request data' }));
-    }
-  });
-}
-
 
 
 
