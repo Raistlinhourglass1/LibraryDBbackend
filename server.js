@@ -1359,6 +1359,7 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
   req.on('end', async () => {
     try {
       const { userEmail, reservationDetails } = JSON.parse(body);
+      console.log("Received request body:", { userEmail, reservationDetails });
 
       if (!userEmail || !reservationDetails || !reservationDetails.laptop_id || reservationDetails.overdueDays == null) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1399,7 +1400,10 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
     } catch (error) {
       console.error('Error processing overdue email request:', error);
       res.writeHead(400, { 'Content-Type': 'application/json' });
-
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
+    }
+  });
+}
 
 
 
