@@ -1348,19 +1348,22 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
 //Justins Code
 
 
-// email code
-else if (req.method === 'POST' && req.url === '/send-overdue-email') {
+// Route for sending overdue email (authenticated)
+if (req.method === 'POST' && req.url === '/send-overdue-email') {
+  const userData = authenticateToken(req, res);
+  if (!userData) return;
+
   let body = '';
   req.on('data', (chunk) => { body += chunk.toString(); });
   
   req.on('end', async () => {
     try {
-      const { userEmail, reservationDetails } = JSON.parse(body);
-      console.log("Email details received:", { userEmail, reservationDetails });
-
-      if (!userEmail || !reservationDetails || !reservationDetails.reservation_id || reservationDetails.overdueDays == null) {
+      const { reservationDetails } = JSON.parse(body);
+      
+      // Validate reservation details
+      if (!reservationDetails || !reservationDetails.reservation_id || reservationDetails.overdueDays == null) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Missing email or reservation details' }));
+        res.end(JSON.stringify({ message: 'Missing reservation details' }));
         return;
       }
 
@@ -1376,7 +1379,7 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
 
       const mailOptions = {
         from: process.env.EMAIL_USER,
-        to: userEmail,
+        to: userData.email, // Using email from token
         subject: 'Your Laptop Reservation is Overdue!',
         text: `Your reservation with ID ${reservationDetails.reservation_id} is overdue by ${reservationDetails.overdueDays} days.`
       };
@@ -1390,7 +1393,16 @@ else if (req.method === 'POST' && req.url === '/send-overdue-email') {
       res.end(JSON.stringify({ message: 'Failed to send overdue email', error: error.message }));
     }
   });
+  return;
 }
+
+
+
+
+
+
+
+
 
 
  // Laptop Reservations Table Route
