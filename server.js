@@ -1368,17 +1368,17 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
       }
 
       const transporter = nodemailer.createTransport({
-        host: 'smtp-mail.outlook.com',
-        port: 587,
-        secure: false,
+        host: 'smtp.gmail.com',
+        port : 465,
+        secure: true,
         auth: {
-          user: 'Database1909@outlook.com', // Your email address
-          pass: 'pxhoagknrbcberwr',       // The app password provided by Outlook
+          user: 'hendrixjustin908@gmail.com', // Your email address
+          pass: 'lblh rxzb hyxz fwai',       // The app password provided by Outlook
         }
       });
 
       const mailOptions = {
-        from: process.env.EMAIL_USER,
+        from: 'hendrixjustin908@gmail.com',
         to: userData.email, // Using email from token
         subject: 'Your Laptop Reservation is Overdue!',
         text: `Your reservation with ID ${reservationDetails.reservation_id} is overdue by ${reservationDetails.overdueDays} days.`
