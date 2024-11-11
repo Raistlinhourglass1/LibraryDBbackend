@@ -1372,8 +1372,8 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
         port: 587,
         secure: false,
         auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS
+          user: 'Database1909@outlook.com', // Your email address
+          pass: 'pxhoagknrbcberwr',       // The app password provided by Outlook
         }
       });
 
