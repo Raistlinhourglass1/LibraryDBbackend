@@ -964,32 +964,41 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
 
 
 
-  // RoomReserveTable Route (temporarily without authenticateToken)
-  if (req.method === 'GET' && req.url === '/RoomReserveTable') {
-    console.log("RoomReserveTable route hit!");
+// Backend: RoomReserveTable Route
+if (req.method === 'GET' && req.url === '/RoomReserveTable') {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
-    const query = 'SELECT reservation_id, user_id, reservation_date, room_number, reservation_duration_hrs, reservation_status, party_size, reservation_reason FROM room_reservations';
-    connection.query(query, (err, results) => {
-      if (res.headersSent) return;
+  if (!token) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'No token provided' }));
+    return;
+  }
 
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid token' }));
+      return;
+    }
+
+    const userId = decoded.user_ID;
+    const query = 'SELECT * FROM room_reservations WHERE user_id = ?';
+    const params = [userId];
+
+    connection.query(query, params, (err, results) => {
       if (err) {
-        console.error("Database error:", err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Database error' }));
-        return;
-      }
-
-      if (results.length === 0) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'No reservations found' }));
+        res.end(JSON.stringify({ error: 'Database error' }));
         return;
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(results));
     });
-    return; // Ensure no further code runs in this route
-  }
+  });
+}
+
 
 
 
@@ -1477,11 +1486,8 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
 }
 
 
-// Book reservations table getter.
+// Book table reservations route
 if (req.method === 'GET' && req.url.startsWith('/booktable_reservations')) {
-  console.log("Incoming GET request for justins /booktable_reservations");
-
-  // Extract and verify JWT
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   
@@ -1493,37 +1499,28 @@ if (req.method === 'GET' && req.url.startsWith('/booktable_reservations')) {
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
-      console.error("Token verification failed:", err);
       res.writeHead(403, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid token' }));
       return;
     }
 
-    // Extract user_id from decoded token
     const userId = decoded.user_ID;
-    console.log("Decoded userId:", userId);
-
-    // Query to fetch book reservations for the specific user
     const query = 'SELECT * FROM book_reservations WHERE user_id = ?';
     const params = [userId];
 
-    // Execute the SQL query
     connection.query(query, params, (err, results) => {
       if (err) {
-        console.error("Database error:", err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Database error' }));
         return;
       }
 
-      console.log("Query results:", results);
-
-      // Respond with the retrieved results
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(results));
     });
   });
 }
+
 
 
 
