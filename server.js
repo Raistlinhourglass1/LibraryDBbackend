@@ -1476,6 +1476,36 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
   return;
 }
 
+// Book Reservations Table Route
+if (req.method === 'GET' && req.url === '/book_reservations') {
+  const userData = authenticateToken(req, res);
+  if (!userData) return; // Ensure the user is authenticated
+
+  try {
+    console.log('Attempting to fetch book reservations...');
+    
+    const query = `SELECT reservation_id, book_id, user_id, book_title, isbn, due_date 
+                   FROM book_reservations 
+                   WHERE user_id = ?`;
+
+    connection.query(query, [userData.user_ID], (error, results) => {
+      if (error) {
+        console.error('Error fetching book reservations:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to retrieve book reservations' }));
+        return;
+      }
+      
+      console.log('Book reservations fetched successfully:', results);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(results));
+    });
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'An unexpected error occurred' }));
+  }
+}
 
 
 
