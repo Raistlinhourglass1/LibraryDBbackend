@@ -1478,8 +1478,8 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
 
 
 // Book reservations table getter.
-if (req.method === 'GET' && req.url.startsWith('/book_reservations')) {
-  console.log("Incoming GET request for /book_reservations");
+if (req.method === 'GET' && req.url.startsWith('/booktable_reservations')) {
+  console.log("Incoming GET request for justins /booktable_reservations");
 
   // Extract and verify JWT
   const authHeader = req.headers['authorization'];
