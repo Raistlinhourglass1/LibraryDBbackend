@@ -793,6 +793,87 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
             params.push(book_isbn);
           }
           break;
+      
+      //query all types of media we have
+      case 'catalog':
+        query = `
+          SELECT book_title AS title, isbn, date_added, 'book' AS media_type FROM book
+          UNION ALL
+          SELECT audio_title AS title, audio_isbn AS isbn, date_added, 'audiobook' AS media_type FROM audiobook
+          UNION ALL
+          SELECT periodical_title AS title, periodical_issn, issue_date AS date_added, 'periodical' AS media_type FROM periodical
+          UNION ALL
+          SELECT ebook_title AS title, ebook_isbn AS isbn, date_added, 'ebook' AS media_type FROM ebook
+        `;
+        break;
+
+
+      //query all reservations/ checkouts from book, rooms, devices
+      case 'transactions':
+        query = `
+          SELECT 'book' AS media_type, book_title AS item_name, book_id AS item_id, user_id, reservation_date_time AS transaction_date
+          FROM book_reservations
+          WHERE 1=1
+        `;
+        
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
+        if (date) {
+          query += ' AND reservation_date_time = ?';
+          params.push(date);
+        }
+        
+        query += `
+          UNION ALL
+          SELECT 'room' AS media_type, room_number AS item_name, room_number AS item_id, user_id, reservation_date AS transaction_date
+          FROM room_reservations
+          WHERE 1=1
+        `;
+        
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
+        if (date) {
+          query += ' AND reservation_date = ?';
+          params.push(date);
+        }
+        
+        query += `
+          UNION ALL
+          SELECT 'laptop' AS media_type, model_name AS item_name, laptop_id AS item_id, user_id, reservation_date_time AS transaction_date
+          FROM laptop_reservations
+          WHERE 1=1
+        `;
+        
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
+        if (date) {
+          query += ' AND reservation_date_time = ?';
+          params.push(date);
+        }
+        
+        query += `
+          UNION ALL
+          SELECT 'calculator' AS media_type, model_name AS item_name, calculator_id AS item_id, user_id, reservation_date_time AS transaction_date
+          FROM calculator_reservations
+          WHERE 1=1
+        `;
+        
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
+        if (date) {
+          query += ' AND reservation_date_time = ?';
+          params.push(date);
+        }
+        break;
+
 
       case 'staff':
         query = 'SELECT * FROM staff WHERE 1=1';
@@ -849,7 +930,6 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
   });
   return;
 }
-
 
 
 
