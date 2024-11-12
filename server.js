@@ -1476,30 +1476,51 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
   return;
 }
 
+
+// Book reservations table getter.
 if (req.method === 'GET' && req.url.startsWith('/book_reservations')) {
   console.log("Incoming GET request for /book_reservations");
 
-  // Parse any query parameters (if using an ID, adjust accordingly)
-  const urlParts = new URL(req.url, `http://${req.headers.host}`);
-  const userId = req.headers['user-id'];  // Adjust based on token-based identification
-  const bookId = urlParts.searchParams.get('book_id'); // Adjust if 'book_id' is optional
-
-  // SQL query based on the presence of bookId
-  const query = bookId
-    ? 'SELECT * FROM book_reservations WHERE book_id = ?'
-    : 'SELECT * FROM book_reservations WHERE user_id = ?'; // Change as per your structure
+  // Verify and decode JWT to get the user_id
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
   
-  const params = bookId ? [bookId] : [userId];
+  if (!token) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'No token provided' }));
+    return;
+  }
 
-  connection.query(query, params, (err, results) => {
+  // Verify JWT
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
-      console.error("Database error:", err);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Database error' }));
+      console.error("Token verification failed:", err);
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid token' }));
       return;
     }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(results)); // Return an array
+
+    const userId = decoded.user_ID; // Extract user_id from the token payload
+    console.log("Decoded userId:", userId);
+
+    const query = 'SELECT * FROM book_reservations WHERE user_id = ?';
+    const params = [userId];
+
+    // Execute the SQL query
+    connection.query(query, params, (err, results) => {
+      if (err) {
+        console.error("Database error:", err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Database error' }));
+        return;
+      }
+
+      // Log the results for debugging
+      console.log("Query results:", results);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(results));
+    });
   });
 }
 
