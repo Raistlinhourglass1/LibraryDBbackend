@@ -1484,7 +1484,7 @@ if (req.method === 'GET' && req.url === '/book_reservations') {
   try {
     console.log('Attempting to fetch book reservations...');
     
-    const query = `SELECT reservation_id, book_id, user_id, book_title, isbn, due_date 
+    const query = `SELECT reservation_id, user_id, book_title, due_date, reservation_date_time
                    FROM book_reservations 
                    WHERE user_id = ?`;
 
