@@ -1482,11 +1482,13 @@ if (req.method === 'GET' && req.url === '/book_reservations') {
   if (!userData) return; // Ensure the user is authenticated
 
   try {
-    console.log('Attempting to fetch book reservations...');
-    
-    const query = `SELECT reservation_id, user_id, book_title, due_date, reservation_date_time
-                   FROM book_reservations 
-                   WHERE user_id = ?`;
+    console.log('Attempting to fetch book reservations for user:', userData.user_ID);
+
+    const query = `
+      SELECT reservation_id, book_id, reservation_date_time, book_title, book_author
+      FROM book_reservations
+      WHERE user_id = ?
+    `;
 
     connection.query(query, [userData.user_ID], (error, results) => {
       if (error) {
@@ -1495,7 +1497,7 @@ if (req.method === 'GET' && req.url === '/book_reservations') {
         res.end(JSON.stringify({ error: 'Failed to retrieve book reservations' }));
         return;
       }
-      
+
       console.log('Book reservations fetched successfully:', results);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(results));
@@ -1506,7 +1508,6 @@ if (req.method === 'GET' && req.url === '/book_reservations') {
     res.end(JSON.stringify({ error: 'An unexpected error occurred' }));
   }
 }
-
 
 
 
