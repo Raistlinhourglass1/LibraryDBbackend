@@ -1476,41 +1476,31 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
   return;
 }
 
-// Book Reservations Table Route
-if (req.method === 'GET' && req.url === '/book_reservations') {
-  console.log("Incoming GET request for /book_reservations"); // Log the route access
+if (req.method === 'GET' && req.url.startsWith('/book_reservations')) {
+  console.log("Incoming GET request for /book_reservations");
 
-  try {
-    const query = `
-      SELECT 
-        reservation_id, 
-        book_id, 
-        user_id, 
-        reservation_date_time, 
-        reservation_status, 
-        queue_position, 
-        book_title, 
-        book_author 
-      FROM book_reservations
-    `;
-    
-    connection.query(query, (error, results) => {
-      if (error) {
-        console.error("Error fetching book reservations:", error); // Log any database error
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Failed to retrieve book reservations' }));
-        return;
-      }
-      
-      console.log("Query successful. Results:", results); // Log the query results
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(results));
-    });
-  } catch (error) {
-    console.error("Unexpected error:", error); // Log any unexpected errors
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'An unexpected error occurred' }));
-  }
+  // Parse any query parameters (if using an ID, adjust accordingly)
+  const urlParts = new URL(req.url, `http://${req.headers.host}`);
+  const userId = req.headers['user-id'];  // Adjust based on token-based identification
+  const bookId = urlParts.searchParams.get('book_id'); // Adjust if 'book_id' is optional
+
+  // SQL query based on the presence of bookId
+  const query = bookId
+    ? 'SELECT * FROM book_reservations WHERE book_id = ?'
+    : 'SELECT * FROM book_reservations WHERE user_id = ?'; // Change as per your structure
+  
+  const params = bookId ? [bookId] : [userId];
+
+  connection.query(query, params, (err, results) => {
+    if (err) {
+      console.error("Database error:", err);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Database error' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results)); // Return an array
+  });
 }
 
 
