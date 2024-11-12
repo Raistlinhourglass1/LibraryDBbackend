@@ -1481,7 +1481,7 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
 if (req.method === 'GET' && req.url.startsWith('/book_reservations')) {
   console.log("Incoming GET request for /book_reservations");
 
-  // Verify and decode JWT to get the user_id
+  // Extract and verify JWT
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   
@@ -1491,7 +1491,6 @@ if (req.method === 'GET' && req.url.startsWith('/book_reservations')) {
     return;
   }
 
-  // Verify JWT
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
       console.error("Token verification failed:", err);
@@ -1500,9 +1499,11 @@ if (req.method === 'GET' && req.url.startsWith('/book_reservations')) {
       return;
     }
 
-    const userId = decoded.user_ID; // Extract user_id from the token payload
+    // Extract user_id from decoded token
+    const userId = decoded.user_ID;
     console.log("Decoded userId:", userId);
 
+    // Query to fetch book reservations for the specific user
     const query = 'SELECT * FROM book_reservations WHERE user_id = ?';
     const params = [userId];
 
@@ -1515,9 +1516,9 @@ if (req.method === 'GET' && req.url.startsWith('/book_reservations')) {
         return;
       }
 
-      // Log the results for debugging
       console.log("Query results:", results);
 
+      // Respond with the retrieved results
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(results));
     });
