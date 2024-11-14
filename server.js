@@ -1078,6 +1078,8 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
 
 // Backend: RoomReserveTable Route
 if (req.method === 'GET' && req.url === '/RoomReserveTable') {
+  console.log("RoomReserveTable route hit!");
+
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -1095,13 +1097,36 @@ if (req.method === 'GET' && req.url === '/RoomReserveTable') {
     }
 
     const userId = decoded.user_ID;
-    const query = 'SELECT * FROM room_reservations WHERE user_id = ?';
+
+    // Query to filter by user ID and select specific columns
+    const query = `
+      SELECT 
+        reservation_id, 
+        user_id, 
+        reservation_date, 
+        reservation_reason, 
+        room_number, 
+        reservation_duration_hrs, 
+        reservation_status, 
+        party_size 
+      FROM room_reservations 
+      WHERE user_id = ?`;
+
     const params = [userId];
 
     connection.query(query, params, (err, results) => {
+      if (res.headersSent) return;
+
       if (err) {
+        console.error("Database error:", err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Database error' }));
+        res.end(JSON.stringify({ message: 'Database error' }));
+        return;
+      }
+
+      if (results.length === 0) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'No reservations found' }));
         return;
       }
 
