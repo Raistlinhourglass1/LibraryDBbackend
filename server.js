@@ -706,6 +706,22 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
         }
         break;
 
+      case 'most liked':
+        query = `
+          SELECT b.book_title, 
+            b.author,
+            b.isbn, 
+            COUNT(r.feedback_id) AS review_count, 
+            AVG(r.rating) AS average_rating
+          FROM book b
+          JOIN feedback r on b.isbn = r.book_isbn
+          GROUP BY b.isbn, b.book_title, b.author
+          HAVING COUNT(r.feedback_id) >= 5
+          ORDER BY average_rating DESC, review_count DESC
+          LIMIT 5;
+        `;
+        break;
+
       case 'feedback':
         query = 'SELECT * FROM feedback WHERE 1=1';
         if (date) {
@@ -907,6 +923,103 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
         }
         break;
 
+
+        case 'user transactions':
+          query = `
+            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'book' AS media_type, br.book_title AS item_name, br.book_id AS item_id, br.reservation_date_time AS transaction_date
+            FROM user u
+            JOIN book_reservations br ON u.user_id = br.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          if (date) {
+            query += ' AND br.reservation_date_time = ?';
+            params.push(date);
+          }
+
+          query += ` 
+            UNION ALL
+            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'room' AS media_type, rr.room_number AS item_name, rr.room_number AS item_id, rr.reservation_date AS transaction_date
+            FROM user u
+            JOIN room_reservations rr ON u.user_id = rr.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          if (date) {
+            query += ' AND rr.reservation_date = ?';
+            params.push(date);
+          }
+
+          query += `
+            UNION ALL
+            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'laptop' AS media_type, lr.model_name AS item_name, lr.laptop_id AS item_id, lr.reservation_date_time AS transaction_date
+            FROM user u
+            JOIN laptop_reservations lr ON u.user_id = lr.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          if (date) {
+            query += ' AND lr.reservation_date_time = ?';
+            params.push(date);
+          }
+
+          query += `
+            UNION ALL
+            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'calculator' AS media_type, cr.model_name AS item_name, cr.calculator_id AS item_id, cr.reservation_date_time AS transaction_date
+            FROM user u
+            JOIN calculator_reservations cr ON u.user_id = cr.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          if (date) {
+            query += ' AND cr.reservation_date_time = ?';
+            params.push(date);
+          }
+          break;
+        
+        case 'session activity':
+            query = `
+              SELECT 
+                al.activity_id,
+                al.user_id,
+                CONCAT(u.first_name, ' ', u.last_name) AS username,
+                u.email,
+                al.action,
+                al.description,
+                al.ip_address,
+                al.user_agent,
+                al.created_at
+              FROM activity_log al
+              JOIN user u ON al.user_id = u.user_id
+              WHERE 1=1
+            `;
+          
+            // Apply filters if any
+            if (user_id) {
+              query += ' AND al.user_id = ?';
+              params.push(user_id);
+            }
+            if (date) {
+              query += ' AND DATE(al.created_at) = ?';
+              params.push(date);
+            }
+          
+            break;
+          
+
+
       default:
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
@@ -930,7 +1043,6 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
   });
   return;
 }
-
 
 
 
@@ -1525,8 +1637,43 @@ if (req.method === 'GET' && req.url.startsWith('/booktable_reservations')) {
 
 
 
+//Logout Stuff
+else if (req.method === 'POST' && req.url === '/logout') {
+  // Authenticate the token to get the user details
+  const user = authenticateToken(req, res); // Use the same authenticateToken middleware
+  
+  if (!user) {
+    // If token is invalid or expired, the authenticateToken middleware will already send a response
+    return;
+  }
 
+  try {
+    // Log the logout activity
+    const ip_address = req.connection.remoteAddress;
+    const user_agent = req.headers['user-agent'];
 
+    // Insert logout activity into activity_log
+    const logQuery = `INSERT INTO activity_log (user_id, action, description, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, NOW())`;
+    const logValues = [user.user_ID, 'logout', 'User logged out', ip_address, user_agent];
+
+    connection.query(logQuery, logValues, (logErr, logResult) => {
+      if (logErr) {
+        console.error('Error logging activity:', logErr);
+      } else {
+        console.log('User logout activity logged successfully');
+      }
+    });
+
+    // Send a response indicating successful logout
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Logout successful' }));
+
+  } catch (error) {
+    console.error('Error logging out:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Error logging out' }));
+  }
+}
 
 
  // Laptop Reservations Table Route
@@ -1777,7 +1924,7 @@ else if (req.method === 'PUT' && req.url === '/ProfilePage2') {
     });
   }
 
- // SignIn Route
+// SignIn Route
 else if (req.method === 'POST' && req.url === '/SignIn') {
   try {
     const { email, password } = await getRequestData(req);
@@ -1833,6 +1980,22 @@ else if (req.method === 'POST' && req.url === '/SignIn') {
 
         // Log successful login
         console.log('Login successful, JWT token created');
+
+        // Capture IP address and user agent
+        const ip_address = req.connection.remoteAddress;
+        const user_agent = req.headers['user-agent'];
+
+        // Insert login activity into activity_log
+        const logQuery = `INSERT INTO activity_log (user_id, action, description, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, NOW())`;
+        const logValues = [user.user_ID, 'login', 'User logged in', ip_address, user_agent];
+
+        connection.query(logQuery, logValues, (logErr, logResult) => {
+          if (logErr) {
+            console.error('Error logging activity:', logErr);
+          } else {
+            console.log('User login activity logged successfully');
+          }
+        });
 
         // Return the token on successful login
         res.writeHead(200, { 'Content-Type': 'application/json' });
