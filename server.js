@@ -1637,6 +1637,53 @@ if (req.method === 'GET' && req.url.startsWith('/booktable_reservations')) {
 
 
 
+  // Handle POST request to add a new staff member
+  if (req.method === 'POST' && req.url === '/staff') {
+    let body = '';
+
+    // Collect data from the request body
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on('end', async () => {
+      try {
+        // Parse the JSON body
+        const { first_name, last_name, email, phone_number, position, status, salary, notes } = JSON.parse(body);
+
+        // Basic validation
+        if (!first_name || !last_name || !email || !phone_number || !position || !status || salary == null) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Please provide all required fields' }));
+          return;
+        }
+
+        // Insert the new staff member into the database
+        const [result] = await db.execute(
+          `INSERT INTO staff (first_name, last_name, email, phone_number, position, status, salary, notes) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [first_name, last_name, email, phone_number, position, status, salary, notes]
+        );
+
+        // Check if the insertion was successful
+        if (result.affectedRows > 0) {
+          res.writeHead(201, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Staff member added successfully' }));
+        } else {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Failed to add staff member' }));
+        }
+      } catch (error) {
+        console.error('Database error:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Database error', error: error.message }));
+      }
+    });
+  }
+
+
+
+
 //Logout Stuff
 else if (req.method === 'POST' && req.url === '/logout') {
   // Authenticate the token to get the user details
