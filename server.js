@@ -1101,16 +1101,16 @@ if (req.method === 'GET' && req.url === '/RoomReserveTable') {
     // Query to filter by user ID and select specific columns
     const query = `
       SELECT 
-        reservation_id, 
-        user_id, 
-        reservation_date, 
-        reservation_reason, 
-        room_number, 
-        reservation_duration_hrs, 
-        reservation_status, 
-        party_size 
-      FROM room_reservations 
-      WHERE user_id = ?`;
+          reservation_id, 
+          user_id, 
+          DATE_FORMAT(CONVERT_TZ(reservation_date, '+00:00', @@session.time_zone), '%Y-%m-%d %H:%i:%s') AS reservation_date, 
+          reservation_reason, 
+          room_number, 
+          reservation_duration_hrs, 
+          reservation_status, 
+          party_size 
+        FROM room_reservations 
+        WHERE user_id = ?`;
 
     const params = [userId];
 
