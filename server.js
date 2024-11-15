@@ -1664,7 +1664,7 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
         from: 'hendrixjustin908@gmail.com',
         to: userData.email, // Using email from token
         subject: 'Your Laptop Reservation is Overdue!',
-        text: `Your reservation with ID ${reservationDetails.reservation_id} is overdue by ${reservationDetails.overdueDays} days.`
+        text: `Your reservation with ID ${reservationDetails.reservation_id} is overdue by ${reservationDetails.overdueDays} days. The total amount due is $${reservationDetails.amount_due}.`            
       };
 
       await transporter.sendMail(mailOptions);
