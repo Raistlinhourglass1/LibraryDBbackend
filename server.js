@@ -1260,20 +1260,26 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
         break;
 
       case 'most liked':
-        query = `
-          SELECT b.book_title, 
-            b.author,
-            b.isbn, 
-            COUNT(r.feedback_id) AS review_count, 
-            AVG(r.rating) AS average_rating
-          FROM book b
-          JOIN feedback r on b.isbn = r.book_isbn
-          GROUP BY b.isbn, b.book_title, b.author
-          HAVING COUNT(r.feedback_id) >= 5
-          ORDER BY average_rating DESC, review_count DESC
-          LIMIT 5;
-        `;
-        break;
+          query = `
+            SELECT 
+                b.book_title, 
+                b.author,
+                b.isbn, 
+                COUNT(DISTINCT r.feedback_id) AS review_count, 
+                AVG(r.rating) AS average_rating
+            FROM 
+                book b
+            JOIN 
+                feedback r ON b.isbn = r.book_isbn
+            GROUP BY 
+                b.isbn, b.book_title, b.author
+            HAVING 
+                COUNT(DISTINCT r.feedback_id) >= 5
+            ORDER BY 
+                average_rating DESC, review_count DESC
+            LIMIT 5;
+          `;
+          break;
 
       case 'feedback':
         query = 'SELECT * FROM feedback WHERE 1=1';
