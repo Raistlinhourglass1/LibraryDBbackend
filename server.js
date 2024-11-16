@@ -99,193 +99,435 @@ const server = http.createServer(async (req, res) => {
 
 
 
-  //search across books, audio and ebooks, and periodicals
-  if (req.method === 'GET' && req.url.startsWith('/search')) {
-    const urlParams = new URLSearchParams(req.url.split('?')[1]);
-    const term = urlParams.get('term');
-    
-    if (!term) {
-      res.end(JSON.stringify({ error: 'term query parameter is required' }));
-      return;
-    }
-  const sql = `
-    SELECT *, 
-    CASE 
-        WHEN source = 'book' THEN 2
-        WHEN source = 'audiobook' THEN 1
-        WHEN source = 'ebook' THEN 1
-        WHEN source = 'periodical' THEN 0.5
-        ELSE 0.5
-    END AS relevance 
-    FROM (
-      SELECT book_id AS id, book_title AS title, author, 'book' AS source
-      FROM book 
-      WHERE MATCH (isbn, book_title, author) AGAINST (? IN NATURAL LANGUAGE MODE)
+    ////search the entire catalog
+
+    if (req.method === 'GET' && req.url.startsWith('/search')) {
+      const urlParams = new URLSearchParams(req.url.split('?')[1]);
+      const term = urlParams.get('term');
       
-      UNION ALL
-
-      SELECT audiobook_id AS id, audio_title AS title, audio_author AS author, 'audiobook' AS source
-      FROM audiobook
-      WHERE MATCH (audio_isbn, audio_title, audio_author) AGAINST (? IN NATURAL LANGUAGE MODE)
-
-      UNION ALL
-
-      SELECT ebook_id AS id, ebook_title AS title, ebook_author AS author, 'ebook' AS source
-      FROM ebook
-      WHERE MATCH (ebook_isbn, ebook_title, ebook_author) AGAINST (? IN NATURAL LANGUAGE MODE)
-
-      UNION ALL
-
-      SELECT periodical_id AS id, periodical_title AS title, periodical_author AS author, 'periodical' AS source
-      FROM periodical
-      WHERE MATCH (periodical_issn, periodical_title, periodical_author) AGAINST (? IN NATURAL LANGUAGE MODE)
-    ) AS combined 
-    ORDER BY relevance DESC;
-    `;
-  const likeTerm = `${term}%`; // Use wildcards for LIKE
+      if (!term) {
+        res.end(JSON.stringify({ error: 'term query parameter is required' }));
+        return;
+      }
+      const sql = `
+      SELECT *,
+      SUM(
+          CASE 
+              WHEN source = 'book' AND status = 'available' THEN 1
+              WHEN source IN ('audiobook', 'ebook', 'periodical') AND status = 1 THEN 1
+              ELSE 0
+          END
+      ) AS available_count,
+      CASE 
+          WHEN source = 'book' THEN 2
+          WHEN source = 'audiobook' THEN 1
+          WHEN source = 'ebook' THEN 1
+          WHEN source = 'periodical' THEN 0.5
+          ELSE 0.5
+      END AS relevance 
+      FROM (
+        SELECT isbn, book_id AS id, book_title AS title, author, publisher, book_status as status, deleted, 'book' AS source
+        FROM book 
+        WHERE MATCH (isbn, book_title, author) AGAINST (? IN BOOLEAN MODE)
+        
+        UNION ALL
   
-  console.log('Executing query:', sql, 'with parameters:', [`${term}%`]);
-  connection.query(sql, [term, term, term, term, term, term, term, term], (error, results) => {
-       if (error) {
+        SELECT audio_isbn AS isbn, audiobook_id AS id, audio_title AS title, audio_author AS author, audio_publisher AS publisher, availability as status, deleted, 'audiobook' AS source
+        FROM audiobook
+        WHERE MATCH (audio_isbn, audio_title, audio_author) AGAINST (? IN BOOLEAN MODE)
+  
+        UNION ALL
+  
+        SELECT ebook_isbn AS isbn, ebook_id AS id, ebook_title AS title, ebook_author AS author, ebook_publisher AS publisher, availability as status, deleted, 'ebook' AS source
+        FROM ebook
+        WHERE MATCH (ebook_isbn, ebook_title, ebook_author) AGAINST (? IN BOOLEAN MODE)
+  
+        UNION ALL
+  
+        SELECT periodical_issn AS isbn, periodical_id AS id, periodical_title AS title, periodical_author AS author, periodical_publisher AS publisher, availability as status, deleted, 'periodical' AS source
+        FROM periodical
+        WHERE MATCH (periodical_issn, periodical_title, periodical_author) AGAINST (? IN BOOLEAN MODE)
+      ) AS combined 
+      GROUP BY isbn, title, author, publisher, source
+      ORDER BY relevance DESC, available_count DESC;
+  `;
+  
+    const likeTerm = `${term}%`; // Use wildcards for LIKE
+    
+    console.log('Executing query:', sql, 'with parameters:', [`${term}%`]);
+    connection.query(sql, [term, term, term, term], (error, results) => {
+         if (error) {
+            res.end(JSON.stringify({ error: 'Database error' }));
+            return;
+          }
+  
+          return res.end(JSON.stringify(results || []));    
+      });
+    }
+  
+   //get data from server for one book
+    if (req.method === 'GET' && req.url.startsWith('/book')){
+      const urlParts = req.url.split('/');
+      const bookId = urlParts[2];
+  
+      if(!bookId){
+        res.end(JSON.stringify({ error: 'Book ID is required' }));
+        return;
+      }
+  
+      const sql = `
+        SELECT *,
+        book_title AS title,
+        COUNT(*) AS duplicate_count, 
+        COUNT(CASE WHEN book_status = 'available' THEN 1 END) AS available_count
+        FROM book
+        WHERE isbn = (SELECT isbn FROM book WHERE book_id = ?);
+        `;
+  
+      connection.query(sql, [bookId], (error, results) => {
+        if (error) {
           res.end(JSON.stringify({ error: 'Database error' }));
           return;
         }
-
-        return res.end(JSON.stringify(results || []));    
-    });
-  }
-
- //get data from server for one book
-  if (req.method === 'GET' && req.url.startsWith('/book')){
-    const urlParts = req.url.split('/');
-    const bookId = urlParts[2];
-
-    if(!bookId){
-      res.end(JSON.stringify({ error: 'Book ID is required' }));
-      return;
-    }
-
-    const sql = 'SELECT * FROM book WHERE book_id = ?';
-    connection.query(sql, [bookId], (error, results) => {
-      if (error) {
-        res.end(JSON.stringify({ error: 'Database error' }));
-        return;
-      }
-    
-      if (results.length === 0) {
-        return res.end(JSON.stringify({ error: 'Book not found' }));
-      }
       
-      res.end(JSON.stringify(results[0]));
-
-    });
-  }
-
- //send book data to a server
- if(req.method === 'POST' && req.url === '/book-entry') {
-  let body = '';
-
-  req.on('data', (chunk) => {
-    body += chunk.toString(); //convert buffer to string
-  });
-  req.on('end', () => {
-
-      const bookEntryData = JSON.parse(body);
-      const { bIsbn,  bAuthor, bTitle, bCategory,
-        bYear, bEdition, bNumCopies, bMediaType, bPublisher, 
-        bNumPages, bLang, bSummary, bNotes } = bookEntryData
-      
-    //would check for existing book. is this necessary tho
-    //const checkSql = 'SELECT * FROM books WHERE isbn = ?';
-      const insertSql = 
-      'INSERT INTO book (isbn, author, book_title, book_category, year_copyright, edition, availability, media_type, publisher, num_pages, language, book_summary, book_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-      
-      connection.query(insertSql, [bIsbn, bAuthor, bTitle, bCategory,
-        bYear, bEdition, bNumCopies, bMediaType, bPublisher, bNumPages, bLang, 
-        bSummary, bNotes], (err, result) => {
-        if (err) {
-          console.error('Error inserting book data: ', err);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Error inserting book data' }));
-          return;
+        if (results.length === 0) {
+          return res.end(JSON.stringify({ error: 'Book not found' }));
         }
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Book added successfully' }));
-    });
-  });
-}
-
-  //send audiobook data to server
-  if(req.method === 'POST' && req.url === '/catalog-entry/audiobook') {
+        
+        res.end(JSON.stringify(results[0]));
+  
+      });
+    }
+  
+    ////END TEST//////
+    
+    ////get all book catalog
+    if (req.method === 'GET' && req.url.startsWith('/catalog')) {
+     
+      const sql = `SELECT *, 'book' AS source FROM book;
+    `;
+  
+    connection.query(sql, (error, results) => {
+         if (error) {
+            res.end(JSON.stringify({ error: 'Error fetching catalog data' }));
+            return;
+          }
+  
+          return res.end(JSON.stringify(results || []));    
+      });
+    }
+  
+  
+  
+   //send book data to a server
+   if(req.method === 'POST' && req.url === '/book-entry') {
     let body = '';
-
+  
     req.on('data', (chunk) => {
       body += chunk.toString(); //convert buffer to string
     });
     req.on('end', () => {
-
-        const abookEntryData = JSON.parse(body);
-        const { abIsbn, abTitle, abAuthor, abNarrator,abPublisher, 
-          abCategory, abEdition, abLanguage, abDate, abDuration,  abFormat,  
-          abSummary, abNotes } = abookEntryData
+  
+        const bookEntryData = JSON.parse(body);
+        const { bIsbn,  bAuthor, bTitle, bCategory,
+          bYear, bEdition, bNumCopies, bMediaType, bPublisher, 
+          bNumPages, bLang, bSummary, bNotes, bStatus } = bookEntryData
         
       //would check for existing book. is this necessary tho
       //const checkSql = 'SELECT * FROM books WHERE isbn = ?';
         const insertSql = 
-        'INSERT INTO audiobook (audio_isbn, audio_title, audio_author, audio_narrator, audio_publisher, audio_category, audio_edition, audio_language, date_published, duration, format, availability, audio_summary, audio_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        'INSERT INTO book (isbn, author, book_title, book_category, year_copyright, edition, availability, media_type, publisher, num_pages, language, book_summary, book_notes, book_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
         
-        connection.query(insertSql, [abIsbn, abTitle, abAuthor, abNarrator,abPublisher, 
-          abCategory, abEdition, abLanguage, abDate, abDuration,  abFormat, 1,  
-          abSummary, abNotes], (err, result) => {
+        connection.query(insertSql, [bIsbn, bAuthor, bTitle, bCategory,
+          bYear, bEdition, bNumCopies, bMediaType, bPublisher, bNumPages, bLang, 
+          bSummary, bNotes, bStatus], (err, result) => {
           if (err) {
-            console.error('Error inserting audiobook data: ', err);
+            console.error('Error inserting book data: ', err);
             res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'Error inserting audiobook data' }));
+            res.end(JSON.stringify({ message: 'Error inserting book data' }));
             return;
           }
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'Audiobook added successfully' }));
+            res.end(JSON.stringify({ message: 'Book added successfully' }));
       });
     });
   }
-
- //send ebook data to server
- if(req.method === 'POST' && req.url === '/catalog-entry/ebook') {
-  let body = '';
-
-  req.on('data', (chunk) => {
-    body += chunk.toString(); //convert buffer to string
-  });
-  req.on('end', () => {
-
-      const ebookEntryData = JSON.parse(body);
-      const { ebIsbn, ebTitle, ebAuthor, ebPublisher, 
-        ebCategory, ebEdition, ebLanguage, ebDate,
-        ebFormat, ebUrl, ebAccessType, ebSummary, ebNotes } = ebookEntryData
-      
-    //would check for existing book. is this necessary tho
-    //const checkSql = 'SELECT * FROM books WHERE isbn = ?';
-      const insertSql = 
-      'INSERT INTO ebook (ebook_isbn, ebook_title, ebook_author, ebook_publisher, ebook_category, ebook_edition, ebook_language, ebook_year, resource_type, url, access_type, availability, ebook_summary, ebook_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-      
-      connection.query(insertSql, [ebIsbn, ebTitle, ebAuthor, ebPublisher, 
-        ebCategory, ebEdition, ebLanguage, ebDate,
-        ebFormat, ebUrl, ebAccessType, 1, ebSummary, ebNotes], (err, result) => {
+  
+  ////UPDATE BOOK !!
+  if (req.method === 'PUT' && req.url === '/book-entry') {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      const bookData = JSON.parse(body);
+      const {
+        book_id, bIsbn, bAuthor, bTitle, bCategory, bYear, bEdition, bNumCopies,
+        bMediaType, bPublisher, bNumPages, bLang, bSummary, bNotes
+      } = bookData;
+  
+      const updateSql = `
+        UPDATE book SET isbn = ?, author = ?, book_title = ?, book_category = ?,
+        year_copyright = ?, edition = ?, availability = ?, media_type = ?, publisher = ?,
+        num_pages = ?, language = ?, book_summary = ?, book_notes = ?
+        WHERE book_id = ?
+      `;
+  
+      connection.query(updateSql, [
+        bIsbn, bAuthor, bTitle, bCategory, bYear, bEdition, bNumCopies,
+        bMediaType, bPublisher, bNumPages, bLang, bSummary, bNotes, book_id
+      ], (err, result) => {
         if (err) {
-          console.error('Error inserting eBook data: ', err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Error inserting ebook data' }));
+          res.end(JSON.stringify({ message: 'Error updating book data' }));
           return;
         }
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'eBook added successfully' }));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Book updated successfully' }));
+      });
     });
-  });
-}
-
-
-    //send periodical data to server
-    if(req.method === 'POST' && req.url === '/catalog-entry/periodical') {
+  }
+  
+  ////DELETE BOOK 
+  
+  if (req.method === 'PUT' && req.url === '/soft-delete-book') {
+    try {
+      const buffers = [];
+      for await (const chunk of req) {
+        buffers.push(chunk);
+      }
+  
+      const data = JSON.parse(Buffer.concat(buffers).toString());
+      const { book_id } = data;
+  
+      if (!book_id) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ message: 'Book ID is required' }));
+        return;
+      }
+  
+      // Update the deleted column to 1 (true)
+      const query = `UPDATE book SET deleted = 1 WHERE book_id = ?`;
+      
+      connection.query(query, [book_id], (err, result) => {
+        if (err) {
+          console.error('Database Error:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Error deleting book' }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Book marked as deleted successfully' }));
+      });
+    } catch (error) {
+      console.error('Error:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({ message: 'Internal Server Error' }));
+    }
+  }
+  
+  //////RESTORE A BOOK
+  
+  if (req.method === 'PUT' && req.url === '/restore-book') {
+    try {
+      const buffers = [];
+      for await (const chunk of req) {
+        buffers.push(chunk);
+      }
+  
+      const data = JSON.parse(Buffer.concat(buffers).toString());
+      const { book_id } = data;
+  
+      if (!book_id) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ message: 'Book ID is required' }));
+        return;
+      }
+  
+      // Update the deleted column to 0 (false) to restore the book
+      const query = `UPDATE book SET deleted = 0 WHERE book_id = ?`;
+      
+      connection.query(query, [book_id], (err, result) => {
+        if (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Error restoring book' }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Book restored successfully' }));
+      });
+    } catch (error) {
+      console.error('Error:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({ message: 'Internal Server Error' }));
+    }
+  }
+  
+  ////CHECKOUT BOOK!!!!
+  
+  if (req.method === 'PUT' && req.url === '/checkout') {
+    const decoded = authenticateToken(req, res);
+    if (!decoded) return;
+  
+    console.log("Decoded token:", decoded);
+  
+    let body = '';
+  
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+  
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body);
+        const { book_id } = data;
+  
+        if (!book_id) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ message: 'Book ID is required.' }));
+          return;
+        }
+  
+        // Check the status of the specified book
+        const statusQuery = `SELECT isbn, book_status FROM book WHERE book_id = ?`;
+        connection.query(statusQuery, [book_id], (err, statusResult) => {
+          if (err || statusResult.length === 0) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Error fetching book status or book not found.' }));
+            return;
+          }
+  
+          const { isbn, book_status } = statusResult[0];
+  
+          const handleReservationInsert = (selectedBookId) => {
+            // Create reservation record
+            const userId = decoded.user_ID;
+            const dateBorrowed = new Date();
+            const dueDate = new Date();
+            dueDate.setDate(dateBorrowed.getDate() + 14);
+  
+            const insertReservationQuery = `
+              INSERT INTO book_reservations (user_id, book_id, reservation_status, queue_position, date_borrowed, date_due)
+              VALUES (?, ?, 'fulfilled', 0, ?, ?);
+            `;
+  
+            connection.query(
+              insertReservationQuery,
+              [userId, selectedBookId, dateBorrowed, dueDate],
+              (err, reservationResult) => {
+                if (err) {
+                  console.error('Error creating reservation record:', err);
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ message: 'Error creating reservation record.' }));
+                  return;
+                }
+  
+                // Update the status of the book to 'checked_out'
+                const updateQuery = `
+                  UPDATE book 
+                  SET book_status = 'checked_out' 
+                  WHERE book_id = ?;
+                `;
+                connection.query(updateQuery, [selectedBookId], (err, updateResult) => {
+                  if (err) {
+                    console.error('Error updating book status:', err);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: 'Error updating book status.' }));
+                    return;
+                  }
+  
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({
+                    message: 'Book successfully checked out.',
+                    book_id: selectedBookId,
+                    reservation_id: reservationResult.insertId,
+                  }));
+                });
+              }
+            );
+          };
+  
+          if (book_status === 'available') {
+            // The specified book is available, proceed with reservation
+            handleReservationInsert(book_id);
+          } else {
+            // The specified book is not available, find another available copy
+            const findAvailableQuery = `
+              SELECT book_id 
+              FROM book 
+              WHERE isbn = ? AND book_status = 'available'
+              LIMIT 1;
+            `;
+            connection.query(findAvailableQuery, [isbn], (err, availableResult) => {
+              if (err || availableResult.length === 0) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'No available copies found.' }));
+                return;
+              }
+  
+              const nextAvailableBookId = availableResult[0].book_id;
+              handleReservationInsert(nextAvailableBookId);
+            });
+          }
+        });
+      } catch (error) {
+        console.error(error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Internal server error.' }));
+      }
+    });
+  }
+  
+  /**
+   * Helper function to check out a book and create a reservation record.
+   */
+  function checkOutBook(bookId, userId, res) {
+    // Update the status of the book to 'checked_out'
+    const updateQuery = `
+      UPDATE book 
+      SET book_status = 'checked_out' 
+      WHERE book_id = ?;
+    `;
+    connection.query(updateQuery, [bookId], (err, updateResult) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Error checking out book.' }));
+        return;
+      }
+  
+      // Insert a new record into book_reservations
+      const dateBorrowed = new Date();
+      const dueDate = new Date();
+      dueDate.setDate(dateBorrowed.getDate() + 14);
+  
+      const insertReservationQuery = `
+        INSERT INTO book_reservations (user_id, book_id, reservation_status, queue_position, date_borrowed, date_due)
+        VALUES (?, ?, 'fulfilled', 0, ?, ?);
+      `;
+      connection.query(
+        insertReservationQuery,
+        [userId, bookId, dateBorrowed, dueDate],
+        (err, reservationResult) => {
+          if (err) {
+            console.error('Error creating reservation record:', err); // Log the error details
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Error creating reservation record.', error: err }));
+            return;
+          }
+  
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            message: 'Book successfully checked out.',
+            book_id: bookId,
+            reservation_id: reservationResult.insertId,
+          }));
+        }
+      );
+    });
+  }
+  
+    //send audiobook data to server
+    if(req.method === 'POST' && req.url === '/catalog-entry/audiobook') {
       let body = '';
   
       req.on('data', (chunk) => {
@@ -293,30 +535,272 @@ const server = http.createServer(async (req, res) => {
       });
       req.on('end', () => {
   
-          const pEntryData = JSON.parse(body);
-          const { pIssn, pTitle, pAuthor, pType, pPublisher, pCategory,
-            pFormat, pUrl, pFrequency, pIssueDate, pIssueVolume, pIssueNumber,
-            pLanguage, pDescription, pNotes } = pEntryData
+          const abookEntryData = JSON.parse(body);
+          const { abIsbn, abTitle, abAuthor, abNarrator,abPublisher, 
+            abCategory, abEdition, abLanguage, abDate, abDuration,  abFormat,  
+            abSummary, abNotes } = abookEntryData
           
         //would check for existing book. is this necessary tho
         //const checkSql = 'SELECT * FROM books WHERE isbn = ?';
           const insertSql = 
-          'INSERT INTO periodical (periodical_issn, periodical_title, periodical_author, periodical_type, periodical_publisher, periodical_category, periodical_format, periodical_url, frequency, issue_date, issue_volume, issue_number, periodical_language, availability, periodical_description, periodical_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+          'INSERT INTO audiobook (audio_isbn, audio_title, audio_author, audio_narrator, audio_publisher, audio_category, audio_edition, audio_language, date_published, duration, format, availability, audio_summary, audio_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
           
-          connection.query(insertSql, [pIssn, pTitle, pAuthor, pType, pPublisher, pCategory,
-            pFormat, pUrl, pFrequency, pIssueDate, pIssueVolume, pIssueNumber,
-            pLanguage, 1, pDescription, pNotes], (err, result) => {
+          connection.query(insertSql, [abIsbn, abTitle, abAuthor, abNarrator,abPublisher, 
+            abCategory, abEdition, abLanguage, abDate, abDuration,  abFormat, 1,  
+            abSummary, abNotes], (err, result) => {
             if (err) {
-              console.error('Error inserting periodical data: ', err);
+              console.error('Error inserting audiobook data: ', err);
               res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Error inserting periodical data' }));
+              res.end(JSON.stringify({ message: 'Error inserting audiobook data' }));
               return;
             }
               res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Periodical added successfully' }));
+              res.end(JSON.stringify({ message: 'Audiobook added successfully' }));
         });
       });
     }
+  
+   //send ebook data to server
+   if(req.method === 'POST' && req.url === '/catalog-entry/ebook') {
+    let body = '';
+  
+    req.on('data', (chunk) => {
+      body += chunk.toString(); //convert buffer to string
+    });
+    req.on('end', () => {
+  
+        const ebookEntryData = JSON.parse(body);
+        const { ebIsbn, ebTitle, ebAuthor, ebPublisher, 
+          ebCategory, ebEdition, ebLanguage, ebDate,
+          ebFormat, ebUrl, ebAccessType, ebSummary, ebNotes } = ebookEntryData
+        
+      //would check for existing book. is this necessary tho
+      //const checkSql = 'SELECT * FROM books WHERE isbn = ?';
+        const insertSql = 
+        'INSERT INTO ebook (ebook_isbn, ebook_title, ebook_author, ebook_publisher, ebook_category, ebook_edition, ebook_language, ebook_year, resource_type, url, access_type, availability, ebook_summary, ebook_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        
+        connection.query(insertSql, [ebIsbn, ebTitle, ebAuthor, ebPublisher, 
+          ebCategory, ebEdition, ebLanguage, ebDate,
+          ebFormat, ebUrl, ebAccessType, 1, ebSummary, ebNotes], (err, result) => {
+          if (err) {
+            console.error('Error inserting eBook data: ', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Error inserting ebook data' }));
+            return;
+          }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'eBook added successfully' }));
+      });
+    });
+  }
+  
+  
+      //send periodical data to server
+      if(req.method === 'POST' && req.url === '/catalog-entry/periodical') {
+        let body = '';
+    
+        req.on('data', (chunk) => {
+          body += chunk.toString(); //convert buffer to string
+        });
+        req.on('end', () => {
+    
+            const pEntryData = JSON.parse(body);
+            const { pIssn, pTitle, pAuthor, pType, pPublisher, pCategory,
+              pFormat, pUrl, pFrequency, pIssueDate, pIssueVolume, pIssueNumber,
+              pLanguage, pDescription, pNotes } = pEntryData
+            
+          //would check for existing book. is this necessary tho
+          //const checkSql = 'SELECT * FROM books WHERE isbn = ?';
+            const insertSql = 
+            'INSERT INTO periodical (periodical_issn, periodical_title, periodical_author, periodical_type, periodical_publisher, periodical_category, periodical_format, periodical_url, frequency, issue_date, issue_volume, issue_number, periodical_language, availability, periodical_description, periodical_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+            
+            connection.query(insertSql, [pIssn, pTitle, pAuthor, pType, pPublisher, pCategory,
+              pFormat, pUrl, pFrequency, pIssueDate, pIssueVolume, pIssueNumber,
+              pLanguage, 1, pDescription, pNotes], (err, result) => {
+              if (err) {
+                console.error('Error inserting periodical data: ', err);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'Error inserting periodical data' }));
+                return;
+              }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'Periodical added successfully' }));
+          });
+        });
+      }
+  
+      if (req.method === 'GET' && req.url.startsWith('/reviews/')) {
+        // Extract ISBN from the URL
+        const urlParts = req.url.split('/');
+        const isbn = urlParts[2];
+    
+        if (!isbn) {
+            res.statusCode = 400; // Bad Request
+            return res.end(JSON.stringify({ error: 'ISBN is required' }));
+        }
+    
+        // Query to fetch reviews for the book using the provided ISBN
+        const reviewsQuery = `
+            SELECT f.description, f.rating, f.book_isbn, f.date_submitted, f.user_id, u.first_name
+            FROM feedback f
+            JOIN user u ON f.user_id = u.user_id
+            WHERE f.book_isbn = ?
+            ORDER BY f.date_submitted DESC;
+        `;
+    
+        connection.query(reviewsQuery, [isbn], (reviewsError, reviewsResults) => {
+            if (reviewsError) {
+                res.statusCode = 500; // Internal Server Error
+                return res.end(JSON.stringify({ error: 'Database error fetching reviews' }));
+            }
+    
+            if (reviewsResults.length === 0) {
+              res.statusCode = 200; // OK
+              return res.end(JSON.stringify([]));
+            }
+    
+            // Return the reviews data
+            res.statusCode = 200; // OK
+            res.end(JSON.stringify(reviewsResults));
+        });
+    }
+  
+  //////////GET ALL BOOKS CHECKED OUT BY USER::
+  
+  if (req.method === 'GET' && req.url === '/user/book_reservations') {
+    try {
+      console.log('Attempting to fetch book reservations...');
+      const decoded = authenticateToken(req, res);
+      if (!decoded) return;
+  
+      console.log("Decoded token:", decoded); // Log the decoded token
+  
+      // Query to fetch book reservations for the user
+      const reservationsQuery = `
+        SELECT br.reservation_id, br.reservation_date_time, br.reservation_status, br.queue_position, br.date_borrowed, br.date_due, br.date_returned,
+               b.book_id, b.isbn, b.book_title, b.author, b.book_status
+        FROM book_reservations br
+        JOIN book b ON br.book_id = b.book_id
+        WHERE br.user_id = ?
+        ORDER BY br.reservation_date_time DESC;
+      `;
+  
+      // Execute the query
+      connection.query(reservationsQuery, [decoded.user_ID], (error, results) => {
+        if (error) {
+          console.error('Error fetching book reservations:', error);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to retrieve book reservations' }));
+          return;
+        }
+  
+        if (results.length === 0) {
+          console.log('No reservations found for this user.');
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'No reservations found for this user' }));
+          return;
+        }
+  
+        console.log('Book reservations fetched successfully:', results);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(results));
+      });
+    } catch (error) {
+      console.error('Unexpected error:', error);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'An unexpected error occurred' }));
+    }
+  }
+  
+  ///////USER BOOKS END
+  
+  
+  ///////RETURN BOOK START
+  
+  if (req.method === 'PUT' && req.url === '/return-book') {
+    let body = '';
+  
+    // Collect the data from the request
+    req.on('data', chunk => {
+      body += chunk;
+    });
+  
+    req.on('end', () => {
+      try {
+        const { reservation_id, book_id } = JSON.parse(body); // Get reservation_id and book_id from body
+  
+        if (!reservation_id || !book_id) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Reservation ID and Book ID are required' }));
+        }
+        console.log(`Returning book with ID: ${book_id} for reservation ID: ${reservation_id}`);
+        // Start a transaction
+        connection.beginTransaction((err) => {
+          if (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Transaction start failed' }));
+          }
+  
+          // Update the book status to 'available'
+          const updateBookQuery = `
+            UPDATE book
+            SET book_status = 'available'
+            WHERE book_id = ?
+          `;
+          connection.query(updateBookQuery, [book_id], (err, result) => {
+            if (err) {
+              return connection.rollback(() => {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: 'Failed to update book status' }));
+              });
+            }
+  
+            // Update the reservation's date_returned to the current time
+            const updateReservationQuery = `
+              UPDATE book_reservations
+              SET date_returned = NOW(), reservation_status = 'returned'
+              WHERE reservation_id = ? AND book_id = ?
+            `;
+            connection.query(updateReservationQuery, [reservation_id, book_id], (err, result) => {
+              if (err) {
+                return connection.rollback(() => {
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  return res.end(JSON.stringify({ error: 'Failed to update reservation return date' }));
+                });
+              }
+  
+              // Commit the transaction
+              connection.commit((err) => {
+                if (err) {
+                  return connection.rollback(() => {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Transaction commit failed' }));
+                  });
+                }
+  
+                // Respond with success
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ message: 'Book returned successfully' }));
+              });
+            });
+          });
+        });
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Invalid request body' }));
+      }
+    });
+  }
+  
+  
+  
+  
+  ///////////// END OF CLAUDETTES CODE
+  
+  
+  
+  
+  
 
 
 
@@ -363,90 +847,50 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
 
   req.on('end', () => {
     const data = JSON.parse(body);
-    const { reservationId, roomId } = data;
+    const { reservationId, roomId } = data;  // Assuming the frontend provides the reservation ID and room ID
 
-    // Check reservation status
-    const checkReservationStatusSql = `
-      SELECT reservation_status 
-      FROM room_reservations 
+    // Update reservation status to "canceled"
+    const updateReservationStatusSql = `
+      UPDATE room_reservations 
+      SET reservation_status = 'canceled' 
       WHERE reservation_id = ? AND user_id = ?`;
 
-    connection.query(checkReservationStatusSql, [reservationId, userData.user_ID], (err, results) => {
+    connection.query(updateReservationStatusSql, [reservationId, userData.user_ID], (err, result) => {
       if (err) {
-        console.error('Error checking reservation status: ', err);
+        console.error('Error updating reservation status: ', err);
         if (!res.headersSent) {
           res.statusCode = 500;
-          res.end('Error checking reservation status');
+          res.end('Error canceling reservation');
         }
         return;
       }
 
-      // If no result is found or the reservation is not ongoing, return an error
-      if (results.length === 0) {
+      if (result.affectedRows === 0) {
+        // No matching reservation found for the user, return an error
         if (!res.headersSent) {
           res.statusCode = 404;
-          res.end('Reservation not found');
+          res.end('Reservation not found or already canceled');
         }
         return;
       }
 
-      const reservationStatus = results[0].reservation_status;
-      if (reservationStatus === 'ended') {
-        if (!res.headersSent) {
-          res.statusCode = 400;
-          res.end('Reservation has already ended');
-        }
-        return;
-      } else if (reservationStatus !== 'ongoing') {
-        if (!res.headersSent) {
-          res.statusCode = 400;
-          res.end('Reservation has already been canceled');
-        }
-        return;
-      }
-
-      // If the reservation is ongoing, proceed with cancellation
-      const updateReservationStatusSql = `
-        UPDATE room_reservations 
-        SET reservation_status = 'canceled' 
-        WHERE reservation_id = ? AND user_id = ?`;
-
-      connection.query(updateReservationStatusSql, [reservationId, userData.user_ID], (err, result) => {
+      // Set the room status back to available (room_status = 0)
+      const updateRoomStatusSql = 'UPDATE rooms SET room_status = 0 WHERE room_id = ?';
+      connection.query(updateRoomStatusSql, [roomId], (err, result) => {
         if (err) {
-          console.error('Error updating reservation status: ', err);
+          console.error('Error updating room status: ', err);
           if (!res.headersSent) {
             res.statusCode = 500;
-            res.end('Error canceling reservation');
+            res.end('Error updating room status');
           }
           return;
         }
 
-        if (result.affectedRows === 0) {
-          if (!res.headersSent) {
-            res.statusCode = 404;
-            res.end('Reservation not found or already canceled');
-          }
-          return;
+        if (!res.headersSent) {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
         }
-
-        // Set the room status back to available (room_status = 0)
-        const updateRoomStatusSql = 'UPDATE rooms SET room_status = 0 WHERE room_id = ?';
-        connection.query(updateRoomStatusSql, [roomId], (err, result) => {
-          if (err) {
-            console.error('Error updating room status: ', err);
-            if (!res.headersSent) {
-              res.statusCode = 500;
-              res.end('Error updating room status');
-            }
-            return;
-          }
-
-          if (!res.headersSent) {
-            res.statusCode = 200;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
-          }
-        });
       });
     });
   });
@@ -547,15 +991,15 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
 
     req.on('end', () => {
       const data = JSON.parse(body);
-      const { roomId, partySize, reservationDateTime, duration, reservationReason } = data;
+      const { roomId, partySize, reservationDateTime, duration } = data;
 
       const insertReservationSql = `
-        INSERT INTO room_reservations (user_id, room_number, reservation_date, reservation_duration_hrs, party_size, reservation_status, reservation_reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`;
+        INSERT INTO room_reservations (user_id, room_number, reservation_date, reservation_duration_hrs, party_size, reservation_status)
+        VALUES (?, ?, ?, ?, ?, ?)`;
 
-        const values = [userData.user_ID, roomId, reservationDateTime, duration, partySize, 'ongoing', reservationReason];
+        const values = [userData.user_ID, roomId, reservationDateTime, duration, partySize, 'ongoing'];
 
-      //status should be set to ongoing
+      //status should be set to ongoing. if reservation is canceled thru user profile or reservation has ended, status must change
       connection.query(insertReservationSql, values, (err, result) => {
         if (err) {
           console.error('Error inserting reservation: ', err);
@@ -588,74 +1032,52 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
     });
     return;
   }
+ //feedback route
+ else if (req.method === 'POST' && req.url === '/feedback') {
+  const userData = authenticateToken(req, res);
+  if (!userData) return; 
 
+  let body = '';
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
 
-  //feedback route
-  else if (req.method === 'POST' && req.url === '/feedback') {
-    const userData = authenticateToken(req, res);
-    if (!userData) return; 
-  
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
-  
-    req.on('end', async () => {
-      try {
-        const data = JSON.parse(body);
-        const { bookName, bookAuthor, rating, comments, type } = data;
-  
-        if (!bookName || !bookAuthor || !rating) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Missing required feedback fields' }));
+  req.on('end', async () => {
+    try {
+      const data = JSON.parse(body);
+      const { bookName, bookAuthor, rating, comments, type } = data;
+
+      if (!bookName || !bookAuthor || !rating) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Missing required feedback fields' }));
+        return;
+      }
+
+      // Insert feedback into the database
+      const insertFeedbackSql = `
+        INSERT INTO feedback (user_id, book_name, book_author, rating, description, type)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `;
+      const values = [userData.user_ID, bookName, bookAuthor, rating, comments || null, type || 'general'];
+
+      connection.query(insertFeedbackSql, values, (err, result) => {
+        if (err) {
+          console.error('Error inserting feedback:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Error submitting feedback' }));
           return;
         }
-  
-        const checkSql = 'SELECT isbn FROM book WHERE book_title = ?';
-  
-        connection.query(checkSql, [bookName], (err, results) => {
-          if (err) {
-            console.error('Error checking book data:', err);
-            if (!res.headersSent) {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Error checking book data' }));
-            }
-            return;
-          }
-  
-          if (results.length > 0) {
-            const isbn = results[0].isbn;
-  
-            // Insert feedback into the database
-            const insertFeedbackSql = `
-              INSERT INTO feedback (book_isbn, user_id, book_name, book_author, rating, description, type)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `;
-            const values = [isbn, userData.user_ID, bookName, bookAuthor, rating, comments || null, type || 'general'];
-  
-            connection.query(insertFeedbackSql, values, (err, result) => {
-              if (err) {
-                console.error('Error inserting feedback:', err);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: 'Error submitting feedback' }));
-                return;
-              }
-  
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Feedback submitted successfully' }));
-            });
-          } else {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'Book not found' }));
-          }
-        });
-      } catch (error) {
-        console.error('Error processing feedback:', error);
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Invalid request data' }));
-      }
-    });
-  }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Feedback submitted successfully' }));
+      });
+    } catch (error) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
+    }
+  });
+  return;
+}
 
 
 //reports route
@@ -704,22 +1126,6 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
           query += ' AND book_title = ?';
           params.push(book_name);
         }
-        break;
-
-      case 'most liked':
-        query = `
-          SELECT b.book_title, 
-            b.author,
-            b.isbn, 
-            COUNT(r.feedback_id) AS review_count, 
-            AVG(r.rating) AS average_rating
-          FROM book b
-          JOIN feedback r on b.isbn = r.book_isbn
-          GROUP BY b.isbn, b.book_title, b.author
-          HAVING COUNT(r.feedback_id) >= 5
-          ORDER BY average_rating DESC, review_count DESC
-          LIMIT 5;
-        `;
         break;
 
       case 'feedback':
@@ -809,87 +1215,6 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
             params.push(book_isbn);
           }
           break;
-      
-      //query all types of media we have
-      case 'catalog':
-        query = `
-          SELECT book_title AS title, isbn, date_added, 'book' AS media_type FROM book
-          UNION ALL
-          SELECT audio_title AS title, audio_isbn AS isbn, date_added, 'audiobook' AS media_type FROM audiobook
-          UNION ALL
-          SELECT periodical_title AS title, periodical_issn, issue_date AS date_added, 'periodical' AS media_type FROM periodical
-          UNION ALL
-          SELECT ebook_title AS title, ebook_isbn AS isbn, date_added, 'ebook' AS media_type FROM ebook
-        `;
-        break;
-
-
-      //query all reservations/ checkouts from book, rooms, devices
-      case 'transactions':
-        query = `
-          SELECT 'book' AS media_type, book_title AS item_name, book_id AS item_id, user_id, reservation_date_time AS transaction_date
-          FROM book_reservations
-          WHERE 1=1
-        `;
-        
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        if (date) {
-          query += ' AND reservation_date_time = ?';
-          params.push(date);
-        }
-        
-        query += `
-          UNION ALL
-          SELECT 'room' AS media_type, room_number AS item_name, room_number AS item_id, user_id, reservation_date AS transaction_date
-          FROM room_reservations
-          WHERE 1=1
-        `;
-        
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        if (date) {
-          query += ' AND reservation_date = ?';
-          params.push(date);
-        }
-        
-        query += `
-          UNION ALL
-          SELECT 'laptop' AS media_type, model_name AS item_name, laptop_id AS item_id, user_id, reservation_date_time AS transaction_date
-          FROM laptop_reservations
-          WHERE 1=1
-        `;
-        
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        if (date) {
-          query += ' AND reservation_date_time = ?';
-          params.push(date);
-        }
-        
-        query += `
-          UNION ALL
-          SELECT 'calculator' AS media_type, model_name AS item_name, calculator_id AS item_id, user_id, reservation_date_time AS transaction_date
-          FROM calculator_reservations
-          WHERE 1=1
-        `;
-        
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        if (date) {
-          query += ' AND reservation_date_time = ?';
-          params.push(date);
-        }
-        break;
-
 
       case 'staff':
         query = 'SELECT * FROM staff WHERE 1=1';
@@ -923,103 +1248,6 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
         }
         break;
 
-
-        case 'user transactions':
-          query = `
-            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'book' AS media_type, br.book_title AS item_name, br.book_id AS item_id, br.reservation_date_time AS transaction_date
-            FROM user u
-            JOIN book_reservations br ON u.user_id = br.user_id
-            WHERE 1=1
-          `;
-          if (user_id) {
-            query += ' AND u.user_id = ?';
-            params.push(user_id);
-          }
-          if (date) {
-            query += ' AND br.reservation_date_time = ?';
-            params.push(date);
-          }
-
-          query += ` 
-            UNION ALL
-            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'room' AS media_type, rr.room_number AS item_name, rr.room_number AS item_id, rr.reservation_date AS transaction_date
-            FROM user u
-            JOIN room_reservations rr ON u.user_id = rr.user_id
-            WHERE 1=1
-          `;
-          if (user_id) {
-            query += ' AND u.user_id = ?';
-            params.push(user_id);
-          }
-          if (date) {
-            query += ' AND rr.reservation_date = ?';
-            params.push(date);
-          }
-
-          query += `
-            UNION ALL
-            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'laptop' AS media_type, lr.model_name AS item_name, lr.laptop_id AS item_id, lr.reservation_date_time AS transaction_date
-            FROM user u
-            JOIN laptop_reservations lr ON u.user_id = lr.user_id
-            WHERE 1=1
-          `;
-          if (user_id) {
-            query += ' AND u.user_id = ?';
-            params.push(user_id);
-          }
-          if (date) {
-            query += ' AND lr.reservation_date_time = ?';
-            params.push(date);
-          }
-
-          query += `
-            UNION ALL
-            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'calculator' AS media_type, cr.model_name AS item_name, cr.calculator_id AS item_id, cr.reservation_date_time AS transaction_date
-            FROM user u
-            JOIN calculator_reservations cr ON u.user_id = cr.user_id
-            WHERE 1=1
-          `;
-          if (user_id) {
-            query += ' AND u.user_id = ?';
-            params.push(user_id);
-          }
-          if (date) {
-            query += ' AND cr.reservation_date_time = ?';
-            params.push(date);
-          }
-          break;
-        
-        case 'session activity':
-            query = `
-              SELECT 
-                al.activity_id,
-                al.user_id,
-                CONCAT(u.first_name, ' ', u.last_name) AS username,
-                u.email,
-                al.action,
-                al.description,
-                al.ip_address,
-                al.user_agent,
-                al.created_at
-              FROM activity_log al
-              JOIN user u ON al.user_id = u.user_id
-              WHERE 1=1
-            `;
-          
-            // Apply filters if any
-            if (user_id) {
-              query += ' AND al.user_id = ?';
-              params.push(user_id);
-            }
-            if (date) {
-              query += ' AND DATE(al.created_at) = ?';
-              params.push(date);
-            }
-          
-            break;
-          
-
-
       default:
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
@@ -1044,6 +1272,7 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
   return;
 }
 
+//                                                     END OF NICKS CODE
 
 
 
@@ -1149,39 +1378,8 @@ if (req.method === 'GET' && req.url === '/RoomReserveTable') {
                                                             //Sahirs Code
 
 
-
-
- // Calculator Entry Route
- if (req.method === 'POST' && req.url === '/_calculatorEntry') {
-  let body = '';
-  req.on('data', (chunk) => { body += chunk.toString(); });
-  req.on('end', () => {
-    try {
-      const calculatorData = JSON.parse(body);
-      const insertSql = `INSERT INTO Calculators (calculator_model, calculator_type, calc_serial_num, price) VALUES (?, ?, ?, ?)`;
-      const values = [calculatorData.model_name, calculatorData.type, calculatorData.serial_number, calculatorData.price];
-
-      connection.query(insertSql, values, (err, result) => {
-        if (err) {
-          console.error('Error inserting calculator data:', err);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: `Error inserting calculator data: ${err.message}` }));
-          return;
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Calculator added successfully' }));
-      });
-    } catch (error) {
-      console.error('Error processing request:', error);
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: 'Invalid request data' }));
-    }
-  });
-}
-
-
- // Laptop Entry Route
- else if (req.method === 'POST' && req.url === '/_laptopEntry') {
+// Laptop Entry Route
+else if (req.method === 'POST' && req.url === '/_laptopEntry') {
   let body = '';
   req.on('data', (chunk) => { body += chunk.toString(); });
   req.on('end', () => {
@@ -1208,109 +1406,117 @@ if (req.method === 'GET' && req.url === '/RoomReserveTable') {
   });
 }
 
-// Book Reservation Route
-else if (req.method === 'POST' && req.url === '/_bookReservation') {
-  const userData = authenticateToken(req, res);
-  if(!userData) return;
+// Fetch laptops (excluding deleted ones)
+else if (req.method === 'GET' && req.url === '/_laptopCatalog') {
+  const getLaptopsSql = `SELECT model_name, serial_number, price, is_deleted FROM Laptops WHERE is_deleted = 0`; // Exclude deleted laptops
 
+  connection.query(getLaptopsSql, (err, results) => {
+    if (err) {
+      console.error('Error fetching laptop catalog:', err);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: `Error fetching laptop catalog: ${err.message}` }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results)); // Send the laptop entries as JSON
+  });
+}
+
+// Flag (soft delete) a laptop
+else if (req.method === 'PUT' && req.url === '/_flagLaptop') {
   let body = '';
   req.on('data', (chunk) => { body += chunk.toString(); });
-  req.on('end', async () => {
+  req.on('end', () => {
     try {
-      const data = JSON.parse(body);
-      const { book_id, book_title, book_author, reservation_type } = data;
-
-      if (!book_title || !book_author || !reservation_type) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'All fields are required' }));
-        return;
-      }
-
-      // Check for existing reservations for this book on this date
-      const checkExistingReservations = `
-        SELECT COUNT(*) as count 
-        FROM book_reservations 
-        WHERE book_title = ? 
-        AND book_author = ?  
-        AND reservation_status = 'pending'`;
-
-      connection.query(checkExistingReservations, [book_title, book_author], (err, results) => {
+      const { serial_number } = JSON.parse(body);
+      const flagLaptopSql = `UPDATE Laptops SET is_deleted = 1 WHERE serial_number = ?`;
+      
+      connection.query(flagLaptopSql, [serial_number], (err, result) => {
         if (err) {
-          console.error('Error checking existing reservations:', err);
+          console.error('Error flagging laptop:', err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Error checking reservation availability' }));
+          res.end(JSON.stringify({ message: `Error flagging laptop: ${err.message}` }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Laptop flagged successfully' }));
+      });
+    } catch (error) {
+      console.error('Error processing request:', error);
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
+    }
+  });
+}
+
+// Update laptop details (PUT request for editing)
+else if (req.method === 'PUT' && req.url === '/_editLaptop') {
+  let body = '';
+  req.on('data', (chunk) => { body += chunk.toString(); });
+  req.on('end', () => {
+    try {
+      const laptopData = JSON.parse(body);
+
+      // Update the laptop with the provided serial_number and model_name, price
+      const updateLaptopSql = `
+        UPDATE Laptops 
+        SET model_name = ?, price = ?, serial_number = ? 
+        WHERE serial_number = ? AND is_deleted = 0
+      `;
+      const values = [
+        laptopData.model_name,
+        laptopData.price,
+        laptopData.serial_number, // this is the new serial number
+        laptopData.original_serial_number // this is the original serial number for matching
+      ];
+
+      // Assuming you are sending `original_serial_number` to match the current record
+      connection.query(updateLaptopSql, values, (err, result) => {
+        if (err) {
+          console.error('Error updating laptop data:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: `Error updating laptop data: ${err.message}` }));
           return;
         }
 
-        const existingReservationsCount = results[0].count;
-        const newQueuePosition = existingReservationsCount; // This will be 0 if first reservation, 1 if second, etc.
-
-        // Check if user already has a reservation for this book on this date
-        const checkUserReservation = `
-          SELECT COUNT(*) as count 
-          FROM book_reservations 
-          WHERE book_title = ? 
-          AND book_author = ? 
-          AND user_id = ? 
-          AND reservation_status = 'pending'`;
-
-        connection.query(checkUserReservation, [book_title, book_author, userData.user_ID], (userErr, userResults) => {
-          if (userErr) {
-            console.error('Error checking user reservation:', userErr);
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'Error checking user reservation' }));
-            return;
-          }
-
-          if (userResults[0].count > 0) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'You already have a reservation for this book on this date' }));
-            return;
-          }
-
-          // Proceed with creating the new reservation
-          const reservation_status = 'pending';
-          const insertBookSql = `
-            INSERT INTO book_reservations (
-              book_id, 
-              user_id,  
-              book_title, 
-              book_author, 
-              reservation_type, 
-              reservation_status,
-              queue_position
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)`;
-
-          const values = [
-            book_id, 
-            userData.user_ID,
-            book_title, 
-            book_author, 
-            reservation_type, 
-            reservation_status,
-            newQueuePosition
-          ];
-
-          connection.query(insertBookSql, values, (insertErr, result) => {
-            if (insertErr) {
-              console.error('Error inserting reservation:', insertErr);
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Error creating reservation' }));
-              return;
-            }
-
-            // Return success response with queue position
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ 
-              message: existingReservationsCount > 0 ? 'Added to reservation queue' : 'Reservation created successfully',
-              reservation_id: result.insertId,
-              queue_position: newQueuePosition
-            }));
-          });
-        });
+        if (result.affectedRows > 0) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Laptop updated successfully' }));
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Laptop not found or already deleted' }));
+        }
       });
     } catch (error) {
-      console.error('Error processing reservation request:', error);
+      console.error('Error processing request:', error);
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
+    }
+  });
+}
+
+// Calculator Entry Route
+if (req.method === 'POST' && req.url === '/_calculatorEntry') {
+  let body = '';
+  req.on('data', (chunk) => { body += chunk.toString(); });
+  req.on('end', () => {
+    try {
+      const calculatorData = JSON.parse(body);
+      const insertSql = `INSERT INTO Calculators (calculator_model, calculator_type, calc_serial_num, price) VALUES (?, ?, ?, ?)`;
+      const values = [calculatorData.calculator_model, calculatorData.calculator_type, calculatorData.calc_serial_num, calculatorData.price];
+
+      connection.query(insertSql, values, (err, result) => {
+        if (err) {
+          console.error('Error inserting calculator data:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: `Error inserting calculator data: ${err.message}` }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Calculator added successfully' }));
+      });
+    } catch (error) {
+      console.error('Error processing request:', error);
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ message: 'Invalid request data' }));
     }
@@ -1318,203 +1524,128 @@ else if (req.method === 'POST' && req.url === '/_bookReservation') {
 }
 
 
+else if (req.method === 'GET' && req.url === '/_calculatorCatalog') {
+  const getCalculatorsSql = `SELECT calculator_model, calculator_type, calc_serial_num, price, is_deleted FROM Calculators WHERE is_deleted = 0`; // Exclude deleted calculators
 
-// create a laptop reservation
-else if(req.method === 'POST' && req.url === '/_laptopReservation'){
-  const userData = authenticateToken(req, res);
-  if(!userData) return;
-  
-  let body = '';
-  req.on('data', (chunk) => {
-    body += chunk.toString();
-  });
-
-  req.on('end', async () => {
-    try {
-    const data = JSON.parse(body);
-    const { reservation_date_time } = data;
-
-    if (!reservation_date_time) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: 'All fields are required' }));
+  connection.query(getCalculatorsSql, (err, results) => {
+    if (err) {
+      console.error('Error fetching calculator catalog:', err);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: `Error fetching calculator catalog: ${err.message}` }));
       return;
     }
-
- //   const reservation_status = 'pending';
-
-    const insertBookSql = `INSERT INTO laptop_reservations (user_id, reservation_date_time) VALUES (?, ?)`;
-    
-    const values = [userData.user_ID, 
-      reservation_date_time,
-    ];
-    connection.query(insertBookSql, values, (err, result) => {
-      if (err) {
-        console.error('Error inserting reservation:', err);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ 
-          message: 'Error creating reservation',
-          error: err.message 
-        }));
-        return;
-      }
-
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        message: 'Reservation created successfully',
-        reservation_id: result.insertId
-      }));
-    });
-  } catch(error){
-    console.error('Error processing reservation request:', error);
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ message: 'Invalid request data' }));
-  }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results)); // Send the calculator entries as JSON
   });
 }
 
-// Calculator Reservation
-else if(req.method === 'POST' && req.url === '/_calculatorReservation'){
-  const userData = authenticateToken(req,res);
-  if(!userData) return;
 
-
+else if (req.method === 'PUT' && req.url === '/_flagCalculator') {
   let body = '';
-  req.on('data', (chunk) => {
-    body += chunk.toString();
-  });
-
-  req.on('end', async () => {
+  req.on('data', (chunk) => { body += chunk.toString(); });
+  req.on('end', () => {
     try {
-    const data = JSON.parse(body);
-    const { reservation_date_time, calc_type } = data;
+      const { serial_number } = JSON.parse(body);
+      const flagCalculatorSql = `UPDATE Calculators SET is_deleted = 1 WHERE calc_serial_num = ?`;
 
-    if (!reservation_date_time || !calc_type) {
+      connection.query(flagCalculatorSql, [serial_number], (err, result) => {
+        if (err) {
+          console.error('Error flagging calculator:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: `Error flagging calculator: ${err.message}` }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Calculator flagged successfully' }));
+      });
+    } catch (error) {
+      console.error('Error processing request:', error);
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: 'All fields are required' }));
-      return;
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
     }
-
- //   const reservation_status = 'pending';
-
-    const insertBookSql = `INSERT INTO calculator_reservations (user_id, reservation_date_time, calc_type) VALUES (?, ?, ?)`;
-    
-    const values = [userData.user_ID,
-      reservation_date_time, calc_type
-    ];
-    connection.query(insertBookSql, values, (err, result) => {
-      if (err) {
-        console.error('Error inserting reservation:', err);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ 
-          message: 'Error creating reservation',
-          error: err.message 
-        }));
-        return;
-      }
-
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        message: 'Reservation created successfully',
-        reservation_id: result.insertId
-      }));
-    });
-  } catch(error){
-    console.error('Error processing reservation request:', error);
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ message: 'Invalid request data' }));
-  }
   });
 }
 
-// in the meantime, do laptop search at least
-else if(req.method === 'GET' && req.url.startsWith('/_laptopSearch')){
-  try{
-     // Parse the URL and query parameters
-     const urlParts = new URL(req.url, `http://${req.headers.host}`);
-     const params = urlParts.searchParams;
-     
-     const price = params.get('price');
-     const model_name = params.get('model_name');
-     const serial_number = params.get('serial_number');
- 
-     // Build dynamic SQL query based on provided criteria
-     let sql = 'SELECT * FROM Laptops WHERE 1=1';
-     const values = [];
- 
-     if (price) {
-       sql += ' AND price = ?';
-       values.push(price);
-     }
- 
-     if (model_name) {
-       sql += ' AND model_name LIKE ?';
-       values.push(`%${model_name}%`);
-     }
- 
-     if (serial_number) {
-       sql += ' AND serial_number = ?';
-       values.push(serial_number);
-     }
- 
-     // Execute the search query
-     connection.query(sql, values, (err, results) => {
-       if (err) {
-         console.error('Error searching laptops:', err);
-         res.writeHead(500, { 'Content-Type': 'application/json' });
-         res.end(JSON.stringify({ 
-           message: 'Error searching laptops',
-           error: err.message 
-         }));
-         return;
-       }
- 
-       res.writeHead(200, { 'Content-Type': 'application/json' });
-       res.end(JSON.stringify({ 
-         message: 'Search completed successfully',
-         results: results
-       }));
-     });
-   } catch(error){
-    console.error('Error processing search request:', error);
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ message: 'Invalid search criteria' }));
-   }
+else if (req.method === 'PUT' && req.url === '/_editCalculator') {
+  let body = '';
+  req.on('data', (chunk) => { body += chunk.toString(); });
+  req.on('end', () => {
+    try {
+      const calculatorData = JSON.parse(body);
+
+      // Update the calculator with the provided serial_number, model_name, price, and type
+      const updateCalculatorSql = `
+        UPDATE Calculators 
+        SET calculator_model = ?, price = ?, calc_serial_num = ?, calculator_type = ? 
+        WHERE calc_serial_num = ? AND is_deleted = 0
+      `;
+      const values = [
+        calculatorData.calculator_model,     // Corrected field name
+        calculatorData.price,
+        calculatorData.calc_serial_num,      // Corrected field name
+        calculatorData.calculator_type,      // Corrected field name
+        calculatorData.original_serial_number // This should match the original serial number for editing
+      ];
+
+      // Assuming you are sending `original_serial_number` to match the current record
+      connection.query(updateCalculatorSql, values, (err, result) => {
+        if (err) {
+          console.error('Error updating calculator data:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: `Error updating calculator data: ${err.message}` }));
+          return;
+        }
+
+        if (result.affectedRows > 0) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Calculator updated successfully' }));
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Calculator not found or already deleted' }));
+        }
+      });
+    } catch (error) {
+      console.error('Error processing request:', error);
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
+    }
+  });
 }
 
-// Calculator search
-else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
-  try{
+// Laptop Search
+else if(req.method === 'GET' && req.url.startsWith('/_laptopSearch')) {
+  try {
     // Parse the URL and query parameters
     const urlParts = new URL(req.url, `http://${req.headers.host}`);
     const params = urlParts.searchParams;
-    
+
     const price = params.get('price');
+    const price_comparison = params.get('price_comparison'); // New parameter for price comparison
     const model_name = params.get('model_name');
     const serial_number = params.get('serial_number');
-    const type = params.get('type');
 
     // Build dynamic SQL query based on provided criteria
-    let sql = 'SELECT * FROM Calculators WHERE 1=1';
+    let sql = 'SELECT * FROM Laptops WHERE 1=1';
     const values = [];
 
-    if (price) {
+    if (price && price_comparison) {
+      // Add price comparison condition to SQL query
+      sql += ` AND price ${price_comparison} ?`;
+      values.push(price);
+    } else if (price) {
+      // Default price condition (equal to) if no comparison operator is provided
       sql += ' AND price = ?';
       values.push(price);
     }
 
     if (model_name) {
-      sql += ' AND calculator_model LIKE ?';
+      sql += ' AND model_name LIKE ?';
       values.push(`%${model_name}%`);
     }
 
     if (serial_number) {
-      sql += ' AND calc_serial_num = ?';
+      sql += ' AND serial_number = ?';
       values.push(serial_number);
-    }
-
-    if(type){
-      sql += ' AND calculator_type LIKE ?';
-      values.push(`%${type}%`);
     }
 
     // Execute the search query
@@ -1535,20 +1666,580 @@ else if(req.method === 'GET' && req.url.startsWith('/_calculatorSearch')){
         results: results
       }));
     });
-  } catch(error){
-   console.error('Error processing search request:', error);
-   res.writeHead(400, { 'Content-Type': 'application/json' });
-   res.end(JSON.stringify({ message: 'Invalid search criteria' }));
+  } catch (error) {
+    console.error('Error processing search request:', error);
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Invalid search criteria' }));
   }
 }
 
+ //Calculator Search
+ // Calculator search endpoint
+else if (req.method === 'GET' && req.url.startsWith('/_calculatorSearch')) {
+  try {
+    // Parse the URL and query parameters
+    const urlParts = new URL(req.url, `http://${req.headers.host}`);
+    const params = urlParts.searchParams;
+    
+    const price = params.get('price');
+    const price_comparison = params.get('price_comparison');
+    const model_name = params.get('model_name');
+    const serial_number = params.get('serial_number');
+    const type = params.get('type');
 
+    // Build dynamic SQL query based on provided criteria
+    let sql = 'SELECT * FROM Calculators WHERE 1=1';
+    const values = [];
 
+    // Price comparison logic
+    if (price && price_comparison) {
+      switch (price_comparison) {
+        case 'lessThanEqual':
+          sql += ' AND price <= ?';
+          values.push(price);
+          break;
+        case 'greaterThanEqual':
+          sql += ' AND price >= ?';
+          values.push(price);
+          break;
+        case 'equal':
+          sql += ' AND price = ?';
+          values.push(price);
+          break;
+        default:
+          break;
+      }
+    }
 
+    // Other filters
+    if (model_name) {
+      sql += ' AND calculator_model LIKE ?';
+      values.push(`%${model_name}%`);
+    }
 
+    if (serial_number) {
+      sql += ' AND calc_serial_num = ?';
+      values.push(serial_number);
+    }
 
+    if (type) {
+      sql += ' AND calculator_type LIKE ?';
+      values.push(`%${type}%`);
+    }
 
+    // Execute the query
+    connection.query(sql, values, (err, results) => {
+      if (err) {
+        console.error('Error searching calculators:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Error searching calculators', error: err.message }));
+        return;
+      }
 
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Search completed successfully', results }));
+    });
+  } catch (error) {
+    console.error('Error processing search request:', error);
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Invalid search criteria' }));
+  }
+}
+
+//Laptop Reservation Route
+// Laptop Reservation Handler
+else if(req.method === 'POST' && req.url === '/_laptopReservation'){
+  const userData = authenticateToken(req, res);
+  if (!userData) {
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ success: false, message: 'Authentication failed' }));
+    return;
+  }
+
+  let body = '';
+
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body);
+      const { laptopId, reservationDateTime, duration } = data;
+
+      // Fetch laptop details
+      const getLaptopDetailsSql = `
+        SELECT model_name, serial_number, price, laptop_status 
+        FROM Laptops 
+        WHERE laptop_ID = ? AND laptop_status = 0`;
+      
+      connection.query(getLaptopDetailsSql, [laptopId], (err, results) => {
+        if (err) {
+          console.error('Error fetching laptop details: ', err);
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ 
+            success: false, 
+            message: 'Error fetching laptop details' 
+          }));
+          return;
+        }
+
+        if (results.length === 0) {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ 
+            success: false, 
+            message: 'Laptop is not available' 
+          }));
+          return;
+        }
+
+        const { model_name, serial_number } = results[0];
+
+        // Check for reservation conflicts
+        const checkReservationSql = `
+          SELECT * FROM laptop_reservations 
+          WHERE laptop_ID = ? 
+          AND reservation_date_time <= ? 
+          AND (reservation_date_time + INTERVAL reservation_range_hrs HOUR) > ?
+          AND reservation_status = 'ongoing'`;
+
+        const reservationEndTime = new Date(reservationDateTime);
+        reservationEndTime.setHours(reservationEndTime.getHours() + parseInt(duration));
+
+        connection.query(checkReservationSql, [laptopId, reservationDateTime, reservationEndTime], (err, reservedResults) => {
+          if (err) {
+            console.error('Error checking reservation: ', err);
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ 
+              success: false, 
+              message: 'Error checking reservation availability' 
+            }));
+            return;
+          }
+
+          if (reservedResults.length > 0) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ 
+              success: false, 
+              message: 'Laptop is already reserved for the selected time' 
+            }));
+            return;
+          }
+
+          // Insert reservation
+          const insertReservationSql = `
+            INSERT INTO laptop_reservations (
+              user_id,
+              laptop_ID,
+              reservation_date_time,
+              reservation_range_hrs,
+              reservation_status,
+              model_name
+            ) VALUES (?, ?, ?, ?, ?, ?)`;
+
+          const values = [
+            userData.user_ID,
+            laptopId,
+            reservationDateTime,
+            duration,
+            'pending',
+            model_name
+          ];
+
+          connection.query(insertReservationSql, values, (err, result) => {
+            if (err) {
+              console.error('Error inserting reservation: ', err);
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ 
+                success: false, 
+                message: 'Error making reservation' 
+              }));
+              return;
+            }
+
+            // Update laptop status
+            const updateLaptopStatusSql = 'UPDATE Laptops SET laptop_status = 1 WHERE laptop_ID = ?';
+            connection.query(updateLaptopStatusSql, [laptopId], (err, result) => {
+              if (err) {
+                console.error('Error updating laptop status: ', err);
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ 
+                  success: false, 
+                  message: 'Error updating laptop status' 
+                }));
+                return;
+              }
+
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({
+                success: true,
+                message: 'Laptop reserved successfully',
+                reservationId: result.insertId
+              }));
+            });
+          });
+        });
+      });
+    } catch (error) {
+      console.error('Error parsing request body:', error);
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ 
+        success: false, 
+        message: 'Invalid request format' 
+      }));
+    }
+  });
+}
+// Fetch available laptops
+else if (req.method === 'GET' && req.url.startsWith('/get-laptops')) {
+  // Base SQL query to get available laptops with relevant details
+  const sql = `
+    SELECT 
+      laptop_ID,
+      model_name,
+      serial_number,
+      price,
+      processor,
+      memory,
+      storage,
+      battery_life,
+      camera,
+      USB_ports,
+      display_ports,
+      resolution
+    FROM Laptops 
+    WHERE laptop_status = 0 
+    AND is_deleted = 0`;  // Only get available and non-deleted laptops
+
+  connection.query(sql, (err, results) => {
+    if (err) {
+      console.error('Error fetching laptops: ', err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Error fetching laptops' }));
+      }
+      return;
+    }
+
+    if (!res.headersSent) {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        success: true,
+        data: results,
+        count: results.length
+      }));
+    }
+  });
+  return;
+}
+
+// Calculator Reservation
+// Calculator Reservation
+else if(req.method === 'POST' && req.url === '/_calculatorReservation'){
+  const userData = authenticateToken(req, res);
+  if (!userData) return;
+
+  let body = '';
+
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+
+  req.on('end', () => {
+    const data = JSON.parse(body);
+    const { calculatorId, reservationDateTime, duration, reservationReason, calculatorType } = data;
+
+    // First, fetch the details of the calculator being reserved
+    const getCalculatorDetailsSql = 'SELECT calculator_model, calculator_type, calc_serial_num, price, calculator_status FROM Calculators WHERE calculator_id = ? AND calculator_status = 0';
+    connection.query(getCalculatorDetailsSql, [calculatorId], (err, results) => {
+      if (err) {
+        console.error('Error fetching calculator details: ', err);
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.end('Error fetching calculator details');
+        }
+        return;
+      }
+
+      if (results.length === 0) {
+        if (!res.headersSent) {
+          res.statusCode = 400;
+          res.end('Calculator is not available');
+        }
+        return;
+      }
+
+      const { calculator_model, calculator_type, calculator_serial_num, price, calculator_status } = results[0];
+
+      // Ensure the selected calculator type matches the one in the database
+      if (calculatorType !== calculator_type) {
+        if (!res.headersSent) {
+          res.statusCode = 400;
+          res.end('Selected calculator type does not match the available type');
+        }
+        return;
+      }
+
+      // Check if the calculator is already reserved during the requested time
+      const checkReservationSql = 'SELECT * FROM calculator_reservations WHERE calculator_id = ? AND reservation_date_time <= ? AND (reservation_date_time + INTERVAL reservation_range_hrs HOUR) > ? AND reservation_status = "ongoing"';
+      const reservationEndTime = new Date(reservationDateTime);
+      reservationEndTime.setHours(reservationEndTime.getHours() + duration); // Calculate end time based on duration
+
+      connection.query(checkReservationSql, [calculatorId, reservationDateTime, reservationEndTime], (err, reservedResults) => {
+        if (err) {
+          console.error('Error checking reservation: ', err);
+          if (!res.headersSent) {
+            res.statusCode = 500;
+            res.end('Error checking reservation availability');
+          }
+          return;
+        }
+
+        if (reservedResults.length > 0) {
+          if (!res.headersSent) {
+            res.statusCode = 400;
+            res.end('Calculator is already reserved for the selected time');
+          }
+          return;
+        }
+
+        // Insert reservation into calculator_reservations table
+        const insertReservationSql = `
+          INSERT INTO calculator_reservations (user_id, calculator_id, reservation_date_time, reservation_range_hrs, reservation_status, calc_type, model_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+        const values = [
+          userData.user_ID,
+          calculatorId,
+          reservationDateTime,
+          duration,
+          'reserved',  // Reservation status is reserved when first made
+          calculator_type,
+          calculator_model
+        ];
+
+        connection.query(insertReservationSql, values, (err, result) => {
+          if (err) {
+            console.error('Error inserting reservation: ', err);
+            if (!res.headersSent) {
+              res.statusCode = 500;
+              res.end('Error making reservation');
+            }
+            return;
+          }
+
+          // Update the calculator status from available (0) to reserved (1)
+          const updateCalculatorStatusSql = 'UPDATE Calculators SET calculator_status = 1 WHERE calculator_id = ?';
+          connection.query(updateCalculatorStatusSql, [calculatorId], (err, result) => {
+            if (err) {
+              console.error('Error updating calculator status: ', err);
+              if (!res.headersSent) {
+                res.statusCode = 500;
+                res.end('Error updating calculator status');
+              }
+              return;
+            }
+
+            if (!res.headersSent) {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ message: 'Calculator reserved successfully' }));
+            }
+          });
+        });
+      });
+    });
+  });
+  return;
+}
+
+//fetch available calculators
+else if (req.method === 'GET' && req.url.startsWith('/get-calculators')) {
+  const urlParams = new URLSearchParams(req.url.split('?')[1]);
+  const calculatorType = urlParams.get('type');  // Get the calculator type (either 'Graphing' or 'Scientific')
+
+  // Adjust SQL query based on the selected type
+  let sql = 'SELECT calculator_id, calculator_model, calculator_type FROM Calculators WHERE calculator_status = 0';
+
+  if (calculatorType) {
+    sql += ' AND calculator_type = ?';
+  }
+
+  connection.query(sql, [calculatorType], (err, results) => {
+    if (err) {
+      console.error('Error fetching calculators: ', err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end('Error fetching calculators');
+      }
+      return;
+    }
+
+    if (!res.headersSent) {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(results));
+    }
+  });
+  return;
+}
+
+// Cancel Calculator Reservation
+// Backend route handler:
+else if (req.method === 'POST' && req.url === '/cancel-cal-reservation') {
+  const userData = authenticateToken(req, res);
+  if (!userData) return;
+
+  let body = '';
+  req.on('data', chunk => {
+    body += chunk.toString();
+  });
+
+  req.on('end', () => {
+    const data = JSON.parse(body);
+    const { reservationId, calculatorId } = data;
+
+    // Begin transaction
+    connection.beginTransaction(err => {
+      if (err) {
+        console.error('Error starting transaction:', err);
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: 'Internal server error' }));
+        return;
+      }
+
+      // First update reservation status
+      const updateReservationSql = `
+        UPDATE calculator_reservations 
+        SET reservation_status = 'cancelled'
+        WHERE reservation_id = ? AND user_id = ?`;
+
+      connection.query(updateReservationSql, [reservationId, userData.user_ID], (err, result) => {
+        if (err) {
+          return connection.rollback(() => {
+            console.error('Error updating reservation:', err);
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: 'Error canceling reservation' }));
+          });
+        }
+
+        if (result.affectedRows === 0) {
+          return connection.rollback(() => {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'Reservation not found or already canceled' }));
+          });
+        }
+
+        // Then update calculator status
+        const updateCalculatorSql = `
+          UPDATE Calculators 
+          SET calculator_status = 0 
+          WHERE calculator_id = ?`;
+
+        connection.query(updateCalculatorSql, [calculatorId], (err, result) => {
+          if (err) {
+            return connection.rollback(() => {
+              console.error('Error updating calculator status:', err);
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: 'Error updating calculator status' }));
+            });
+          }
+
+          // Commit the transaction
+          connection.commit(err => {
+            if (err) {
+              return connection.rollback(() => {
+                console.error('Error committing transaction:', err);
+                res.statusCode = 500;
+                res.end(JSON.stringify({ error: 'Error completing cancellation' }));
+              });
+            }
+
+            // Success response
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+          });
+        });
+      });
+    });
+  });
+  return;
+}
+
+// Cancel Laptop Route
+else if (req.method === 'POST' && req.url === '/cancel-laptop-reservation') {
+  const userData = authenticateToken(req, res);
+  if (!userData) return;
+
+  let body = '';
+
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+
+  req.on('end', () => {
+    const data = JSON.parse(body);
+    const { reservationId, laptopId } = data;  // Assuming the frontend provides the reservation ID and laptopID
+
+    // Update reservation status to "canceled"
+    const updateReservationStatusSql = `
+      UPDATE laptop_reservations 
+      SET reservation_status = 'cancelled' 
+      WHERE reservation_id = ? AND user_id = ?`;
+
+    connection.query(updateReservationStatusSql, [reservationId, userData.user_ID], (err, result) => {
+      if (err) {
+        console.error('Error updating reservation status: ', err);
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.end('Error canceling reservation');
+        }
+        return;
+      }
+
+      if (result.affectedRows === 0) {
+        // No matching reservation found for the user, return an error
+        if (!res.headersSent) {
+          res.statusCode = 404;
+          res.end('Reservation not found or already canceled');
+        }
+        return;
+      }
+
+      // Set the room status back to available (room_status = 0)
+      const updateRoomStatusSql = 'UPDATE Laptops SET laptop_status = 0 WHERE laptop_ID = ?';
+      connection.query(updateRoomStatusSql, [laptopId], (err, result) => {
+        if (err) {
+          console.error('Error updating room status: ', err);
+          if (!res.headersSent) {
+            res.statusCode = 500;
+            res.end('Error updating room status');
+          }
+          return;
+        }
+
+        if (!res.headersSent) {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+        }
+      });
+    });
+  });
+  return;
+}
 
 
 
