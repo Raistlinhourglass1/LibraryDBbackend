@@ -847,50 +847,90 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
 
   req.on('end', () => {
     const data = JSON.parse(body);
-    const { reservationId, roomId } = data;  // Assuming the frontend provides the reservation ID and room ID
+    const { reservationId, roomId } = data;
 
-    // Update reservation status to "canceled"
-    const updateReservationStatusSql = `
-      UPDATE room_reservations 
-      SET reservation_status = 'canceled' 
+    // Check reservation status
+    const checkReservationStatusSql = `
+      SELECT reservation_status 
+      FROM room_reservations 
       WHERE reservation_id = ? AND user_id = ?`;
 
-    connection.query(updateReservationStatusSql, [reservationId, userData.user_ID], (err, result) => {
+    connection.query(checkReservationStatusSql, [reservationId, userData.user_ID], (err, results) => {
       if (err) {
-        console.error('Error updating reservation status: ', err);
+        console.error('Error checking reservation status: ', err);
         if (!res.headersSent) {
           res.statusCode = 500;
-          res.end('Error canceling reservation');
+          res.end('Error checking reservation status');
         }
         return;
       }
 
-      if (result.affectedRows === 0) {
-        // No matching reservation found for the user, return an error
+      // If no result is found or the reservation is not ongoing, return an error
+      if (results.length === 0) {
         if (!res.headersSent) {
           res.statusCode = 404;
-          res.end('Reservation not found or already canceled');
+          res.end('Reservation not found');
         }
         return;
       }
 
-      // Set the room status back to available (room_status = 0)
-      const updateRoomStatusSql = 'UPDATE rooms SET room_status = 0 WHERE room_id = ?';
-      connection.query(updateRoomStatusSql, [roomId], (err, result) => {
+      const reservationStatus = results[0].reservation_status;
+      if (reservationStatus === 'ended') {
+        if (!res.headersSent) {
+          res.statusCode = 400;
+          res.end('Reservation has already ended');
+        }
+        return;
+      } else if (reservationStatus !== 'ongoing') {
+        if (!res.headersSent) {
+          res.statusCode = 400;
+          res.end('Reservation has already been canceled');
+        }
+        return;
+      }
+
+      // If the reservation is ongoing, proceed with cancellation
+      const updateReservationStatusSql = `
+        UPDATE room_reservations 
+        SET reservation_status = 'canceled' 
+        WHERE reservation_id = ? AND user_id = ?`;
+
+      connection.query(updateReservationStatusSql, [reservationId, userData.user_ID], (err, result) => {
         if (err) {
-          console.error('Error updating room status: ', err);
+          console.error('Error updating reservation status: ', err);
           if (!res.headersSent) {
             res.statusCode = 500;
-            res.end('Error updating room status');
+            res.end('Error canceling reservation');
           }
           return;
         }
 
-        if (!res.headersSent) {
-          res.statusCode = 200;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+        if (result.affectedRows === 0) {
+          if (!res.headersSent) {
+            res.statusCode = 404;
+            res.end('Reservation not found or already canceled');
+          }
+          return;
         }
+
+        // Set the room status back to available (room_status = 0)
+        const updateRoomStatusSql = 'UPDATE rooms SET room_status = 0 WHERE room_id = ?';
+        connection.query(updateRoomStatusSql, [roomId], (err, result) => {
+          if (err) {
+            console.error('Error updating room status: ', err);
+            if (!res.headersSent) {
+              res.statusCode = 500;
+              res.end('Error updating room status');
+            }
+            return;
+          }
+
+          if (!res.headersSent) {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+          }
+        });
       });
     });
   });
@@ -991,15 +1031,15 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
 
     req.on('end', () => {
       const data = JSON.parse(body);
-      const { roomId, partySize, reservationDateTime, duration } = data;
+      const { roomId, partySize, reservationDateTime, duration, reservationReason } = data;
 
       const insertReservationSql = `
-        INSERT INTO room_reservations (user_id, room_number, reservation_date, reservation_duration_hrs, party_size, reservation_status)
-        VALUES (?, ?, ?, ?, ?, ?)`;
+        INSERT INTO room_reservations (user_id, room_number, reservation_date, reservation_duration_hrs, party_size, reservation_status, reservation_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`;
 
-        const values = [userData.user_ID, roomId, reservationDateTime, duration, partySize, 'ongoing'];
+        const values = [userData.user_ID, roomId, reservationDateTime, duration, partySize, 'ongoing', reservationReason];
 
-      //status should be set to ongoing. if reservation is canceled thru user profile or reservation has ended, status must change
+      //status should be set to ongoing
       connection.query(insertReservationSql, values, (err, result) => {
         if (err) {
           console.error('Error inserting reservation: ', err);
@@ -1032,52 +1072,74 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
     });
     return;
   }
- //feedback route
- else if (req.method === 'POST' && req.url === '/feedback') {
-  const userData = authenticateToken(req, res);
-  if (!userData) return; 
 
-  let body = '';
-  req.on('data', (chunk) => {
-    body += chunk.toString();
-  });
 
-  req.on('end', async () => {
-    try {
-      const data = JSON.parse(body);
-      const { bookName, bookAuthor, rating, comments, type } = data;
-
-      if (!bookName || !bookAuthor || !rating) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Missing required feedback fields' }));
-        return;
-      }
-
-      // Insert feedback into the database
-      const insertFeedbackSql = `
-        INSERT INTO feedback (user_id, book_name, book_author, rating, description, type)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `;
-      const values = [userData.user_ID, bookName, bookAuthor, rating, comments || null, type || 'general'];
-
-      connection.query(insertFeedbackSql, values, (err, result) => {
-        if (err) {
-          console.error('Error inserting feedback:', err);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Error submitting feedback' }));
+  //feedback route
+  else if (req.method === 'POST' && req.url === '/feedback') {
+    const userData = authenticateToken(req, res);
+    if (!userData) return; 
+  
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+  
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body);
+        const { bookName, bookAuthor, rating, comments, type } = data;
+  
+        if (!bookName || !bookAuthor || !rating) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Missing required feedback fields' }));
           return;
         }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Feedback submitted successfully' }));
-      });
-    } catch (error) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: 'Invalid request data' }));
-    }
-  });
-  return;
-}
+  
+        const checkSql = 'SELECT isbn FROM book WHERE book_title = ?';
+  
+        connection.query(checkSql, [bookName], (err, results) => {
+          if (err) {
+            console.error('Error checking book data:', err);
+            if (!res.headersSent) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ message: 'Error checking book data' }));
+            }
+            return;
+          }
+  
+          if (results.length > 0) {
+            const isbn = results[0].isbn;
+  
+            // Insert feedback into the database
+            const insertFeedbackSql = `
+              INSERT INTO feedback (book_isbn, user_id, book_name, book_author, rating, description, type)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `;
+            const values = [isbn, userData.user_ID, bookName, bookAuthor, rating, comments || null, type || 'general'];
+  
+            connection.query(insertFeedbackSql, values, (err, result) => {
+              if (err) {
+                console.error('Error inserting feedback:', err);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'Error submitting feedback' }));
+                return;
+              }
+  
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ message: 'Feedback submitted successfully' }));
+            });
+          } else {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Book not found' }));
+          }
+        });
+      } catch (error) {
+        console.error('Error processing feedback:', error);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Invalid request data' }));
+      }
+    });
+  }
 
 
 //reports route
@@ -1126,6 +1188,22 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
           query += ' AND book_title = ?';
           params.push(book_name);
         }
+        break;
+
+      case 'most liked':
+        query = `
+          SELECT b.book_title, 
+            b.author,
+            b.isbn, 
+            COUNT(r.feedback_id) AS review_count, 
+            AVG(r.rating) AS average_rating
+          FROM book b
+          JOIN feedback r on b.isbn = r.book_isbn
+          GROUP BY b.isbn, b.book_title, b.author
+          HAVING COUNT(r.feedback_id) >= 5
+          ORDER BY average_rating DESC, review_count DESC
+          LIMIT 5;
+        `;
         break;
 
       case 'feedback':
@@ -1215,6 +1293,87 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
             params.push(book_isbn);
           }
           break;
+      
+      //query all types of media we have
+      case 'catalog':
+        query = `
+          SELECT book_title AS title, isbn, date_added, 'book' AS media_type FROM book
+          UNION ALL
+          SELECT audio_title AS title, audio_isbn AS isbn, date_added, 'audiobook' AS media_type FROM audiobook
+          UNION ALL
+          SELECT periodical_title AS title, periodical_issn, issue_date AS date_added, 'periodical' AS media_type FROM periodical
+          UNION ALL
+          SELECT ebook_title AS title, ebook_isbn AS isbn, date_added, 'ebook' AS media_type FROM ebook
+        `;
+        break;
+
+
+      //query all reservations/ checkouts from book, rooms, devices
+      case 'transactions':
+        query = `
+          SELECT 'book' AS media_type, book_title AS item_name, book_id AS item_id, user_id, reservation_date_time AS transaction_date
+          FROM book_reservations
+          WHERE 1=1
+        `;
+        
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
+        if (date) {
+          query += ' AND reservation_date_time = ?';
+          params.push(date);
+        }
+        
+        query += `
+          UNION ALL
+          SELECT 'room' AS media_type, room_number AS item_name, room_number AS item_id, user_id, reservation_date AS transaction_date
+          FROM room_reservations
+          WHERE 1=1
+        `;
+        
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
+        if (date) {
+          query += ' AND reservation_date = ?';
+          params.push(date);
+        }
+        
+        query += `
+          UNION ALL
+          SELECT 'laptop' AS media_type, model_name AS item_name, laptop_id AS item_id, user_id, reservation_date_time AS transaction_date
+          FROM laptop_reservations
+          WHERE 1=1
+        `;
+        
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
+        if (date) {
+          query += ' AND reservation_date_time = ?';
+          params.push(date);
+        }
+        
+        query += `
+          UNION ALL
+          SELECT 'calculator' AS media_type, model_name AS item_name, calculator_id AS item_id, user_id, reservation_date_time AS transaction_date
+          FROM calculator_reservations
+          WHERE 1=1
+        `;
+        
+        if (user_id) {
+          query += ' AND user_id = ?';
+          params.push(user_id);
+        }
+        if (date) {
+          query += ' AND reservation_date_time = ?';
+          params.push(date);
+        }
+        break;
+
 
       case 'staff':
         query = 'SELECT * FROM staff WHERE 1=1';
@@ -1248,6 +1407,103 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
         }
         break;
 
+
+        case 'user transactions':
+          query = `
+            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'book' AS media_type, br.book_title AS item_name, br.book_id AS item_id, br.reservation_date_time AS transaction_date
+            FROM user u
+            JOIN book_reservations br ON u.user_id = br.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          if (date) {
+            query += ' AND br.reservation_date_time = ?';
+            params.push(date);
+          }
+
+          query += ` 
+            UNION ALL
+            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'room' AS media_type, rr.room_number AS item_name, rr.room_number AS item_id, rr.reservation_date AS transaction_date
+            FROM user u
+            JOIN room_reservations rr ON u.user_id = rr.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          if (date) {
+            query += ' AND rr.reservation_date = ?';
+            params.push(date);
+          }
+
+          query += `
+            UNION ALL
+            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'laptop' AS media_type, lr.model_name AS item_name, lr.laptop_id AS item_id, lr.reservation_date_time AS transaction_date
+            FROM user u
+            JOIN laptop_reservations lr ON u.user_id = lr.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          if (date) {
+            query += ' AND lr.reservation_date_time = ?';
+            params.push(date);
+          }
+
+          query += `
+            UNION ALL
+            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'calculator' AS media_type, cr.model_name AS item_name, cr.calculator_id AS item_id, cr.reservation_date_time AS transaction_date
+            FROM user u
+            JOIN calculator_reservations cr ON u.user_id = cr.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          if (date) {
+            query += ' AND cr.reservation_date_time = ?';
+            params.push(date);
+          }
+          break;
+        
+        case 'session activity':
+            query = `
+              SELECT 
+                al.activity_id,
+                al.user_id,
+                CONCAT(u.first_name, ' ', u.last_name) AS username,
+                u.email,
+                al.action,
+                al.description,
+                al.ip_address,
+                al.user_agent,
+                al.created_at
+              FROM activity_log al
+              JOIN user u ON al.user_id = u.user_id
+              WHERE 1=1
+            `;
+          
+            // Apply filters if any
+            if (user_id) {
+              query += ' AND al.user_id = ?';
+              params.push(user_id);
+            }
+            if (date) {
+              query += ' AND DATE(al.created_at) = ?';
+              params.push(date);
+            }
+          
+            break;
+          
+
+
       default:
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
@@ -1271,6 +1527,7 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
   });
   return;
 }
+
 
 //                                                     END OF NICKS CODE
 
