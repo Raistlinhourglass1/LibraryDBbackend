@@ -718,6 +718,10 @@ const server = http.createServer(async (req, res) => {
   ///////RETURN BOOK START
   
   if (req.method === 'PUT' && req.url === '/return-book') {
+    const decoded = authenticateToken(req, res);
+      if (!decoded) return;
+  
+      console.log("Decoded token:", decoded); // Log the decoded token
     let body = '';
   
     // Collect the data from the request
@@ -729,7 +733,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const { reservation_id, book_id } = JSON.parse(body); // Get reservation_id and book_id from body
   
-        if (!reservation_id || !book_id) {
+        if (!reservation_id || !book_id || !decoded.user_ID) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: 'Reservation ID and Book ID are required' }));
         }
@@ -759,9 +763,9 @@ const server = http.createServer(async (req, res) => {
             const updateReservationQuery = `
               UPDATE book_reservations
               SET date_returned = NOW(), reservation_status = 'returned'
-              WHERE reservation_id = ? AND book_id = ?
+              WHERE reservation_id = ? AND book_id = ? AND user_id = ?
             `;
-            connection.query(updateReservationQuery, [reservation_id, book_id], (err, result) => {
+            connection.query(updateReservationQuery, [reservation_id, book_id, decoded.user_ID], (err, result) => {
               if (err) {
                 return connection.rollback(() => {
                   res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -791,6 +795,7 @@ const server = http.createServer(async (req, res) => {
       }
     });
   }
+  
   ///////////////RETURN BOOK END
 
   ///////cancel reservation start
