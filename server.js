@@ -712,12 +712,16 @@ const server = http.createServer(async (req, res) => {
     }
   }
   
-  ///////USER BOOKS END
+  ///////USER BOOKS CHECKED OUT END
   
   
   ///////RETURN BOOK START
   
   if (req.method === 'PUT' && req.url === '/return-book') {
+    const decoded = authenticateToken(req, res);
+      if (!decoded) return;
+  
+      console.log("Decoded token:", decoded); // Log the decoded token
     let body = '';
   
     // Collect the data from the request
@@ -729,7 +733,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const { reservation_id, book_id } = JSON.parse(body); // Get reservation_id and book_id from body
   
-        if (!reservation_id || !book_id) {
+        if (!reservation_id || !book_id || !decoded.user_ID) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: 'Reservation ID and Book ID are required' }));
         }
@@ -759,9 +763,9 @@ const server = http.createServer(async (req, res) => {
             const updateReservationQuery = `
               UPDATE book_reservations
               SET date_returned = NOW(), reservation_status = 'returned'
-              WHERE reservation_id = ? AND book_id = ?
+              WHERE reservation_id = ? AND book_id = ? AND user_id = ?
             `;
-            connection.query(updateReservationQuery, [reservation_id, book_id], (err, result) => {
+            connection.query(updateReservationQuery, [reservation_id, book_id, decoded.user_ID], (err, result) => {
               if (err) {
                 return connection.rollback(() => {
                   res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -792,10 +796,75 @@ const server = http.createServer(async (req, res) => {
     });
   }
   
+  ///////////////RETURN BOOK END
+
+  ///////cancel reservation start
+
+if (req.method === 'PUT' && req.url === '/cancel-reservation') {
+  const decoded = authenticateToken(req, res);
+    if (!decoded) return;
+
+    console.log("Decoded token:", decoded); // Log the decoded token
+  try {
+    console.log('Attempting to cancel reservation...');
+    const decoded = authenticateToken(req, res);
+    if (!decoded) return; // If token is invalid or not provided, stop execution
+
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+    });
+
+    req.on('end', () => {
+      const { reservation_id, book_id } = JSON.parse(body);
+
+      if (!reservation_id || !book_id || !decoded.user_ID) {
+        res.writeHead(400, headers);
+        res.end(JSON.stringify({ error: 'Missing required fields' }));
+        return;
+      }
+
+      // SQL query to cancel reservation
+      const cancelReservationQuery = `
+        UPDATE book_reservations
+        SET reservation_status = 'cancelled', queue_position = -1
+        WHERE reservation_id = ? AND book_id = ? AND user_id = ?;
+      `;
+
+      connection.query(cancelReservationQuery, [reservation_id, book_id, decoded.user_ID], (error, results) => {
+        if (error) {
+          console.error('Error cancelling reservation:', error);
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to cancel reservation' }));
+          return;
+        }
+
+        if (results.affectedRows === 0) {
+          console.log('No reservation found to cancel.');
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Reservation not found or already canceled' }));
+          return;
+        }
+
+        console.log('Reservation canceled successfully:', results);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+      });
+    });
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'An unexpected error occurred' }));
+  }
+}
+
+
+
+//////cancel reservation end
   
   
   
-  ///////////// END OF CLAUDETTES CODE
+  ///////////// END OF CLAUDETTES CODE /////////////////////////////////////////////////////////////////////////////////////////
   
   
   
