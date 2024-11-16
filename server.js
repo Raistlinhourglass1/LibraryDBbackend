@@ -2636,6 +2636,43 @@ else if (req.method === 'POST' && req.url === '/cancel-laptop-reservation') {
 //Justins Code
 
 
+
+// Endpoint to update reservation status
+if (req.method === 'POST' && req.url === '/update-reservation-status') {
+  let body = '';
+  req.on('data', (chunk) => { body += chunk.toString(); });
+  
+  req.on('end', async () => {
+    try {
+      const { reservationId, status } = JSON.parse(body);
+      const userData = authenticateToken(req, res);
+      if (!userData) return;
+
+      // Update reservation status in MySQL
+      const updateQuery = 'UPDATE laptop_reservations SET reservation_status = ? WHERE reservation_id = ?';
+      connection.query(updateQuery, [status, reservationId], (error, result) => {
+        if (error) {
+          console.error('Error updating reservation status:', error);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Failed to update reservation status' }));
+          return;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Reservation status updated successfully' }));
+      });
+    } catch (error) {
+      console.error('Invalid request data:', error);
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
+    }
+  });
+}
+
+
+
+
+
 // Handle POST request to add a new staff member
 if (req.method === 'POST' && req.url === '/staff') {
   let body = '';
@@ -2703,39 +2740,83 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
   
   req.on('end', async () => {
     try {
-      const { reservationDetails } = JSON.parse(body);
+      const { reservation_id } = JSON.parse(body);
       
-      // Validate reservation details
-      if (!reservationDetails || !reservationDetails.reservation_id || reservationDetails.overdueDays == null) {
+      if (!reservation_id) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Missing reservation details' }));
+        res.end(JSON.stringify({ message: 'Missing reservation ID' }));
         return;
       }
 
-      const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port : 465,
-        secure: true,
-        auth: {
-          user: 'hendrixjustin908@gmail.com', // Your email address
-          pass: 'lblh rxzb hyxz fwai',       // The app password provided by Outlook
+      // Fetch reservation details and check if overdue email should be sent
+      const query = `SELECT user_email, overdueDays, amount_due, send_overdue_email 
+                     FROM laptop_reservations 
+                     WHERE reservation_id = ?`;
+      
+      connection.query(query, [reservation_id], async (err, results) => {
+        if (err) {
+          console.error('Database error:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Database error fetching reservation details' }));
+          return;
+        }
+        
+        if (results.length === 0) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Reservation not found' }));
+          return;
+        }
+
+        const { user_email, overdueDays, amount_due, send_overdue_email } = results[0];
+
+        // Only send an email if send_overdue_email is set to 1
+        if (send_overdue_email === 1) {
+          const transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port : 465,
+            secure: true,
+            auth: {
+              user: 'hendrixjustin908@gmail.com',
+              pass: 'lblh rxzb hyxz fwai',
+            }
+          });
+
+          const mailOptions = {
+            from: 'hendrixjustin908@gmail.com',
+            to: user_email, 
+            subject: 'Your Laptop Reservation is Overdue!',
+            text: `Your reservation with ID ${reservation_id} is overdue by ${overdueDays} days. The total amount due is $${amount_due}.`
+          };
+
+          try {
+            await transporter.sendMail(mailOptions);
+
+            // Update the send_overdue_email column to 0 after successful email
+            const updateQuery = `UPDATE laptop_reservations SET send_overdue_email = 0 WHERE reservation_id = ?`;
+            connection.query(updateQuery, [reservation_id], (updateErr) => {
+              if (updateErr) {
+                console.error('Error resetting send_overdue_email flag:', updateErr);
+              } else {
+                console.log(`send_overdue_email flag reset for reservation ID: ${reservation_id}`);
+              }
+            });
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Overdue email sent successfully' }));
+          } catch (emailError) {
+            console.error('Error sending overdue email:', emailError);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Failed to send overdue email', error: emailError.message }));
+          }
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'No email sent - send_overdue_email flag is not set' }));
         }
       });
-
-      const mailOptions = {
-        from: 'hendrixjustin908@gmail.com',
-        to: userData.email, // Using email from token
-        subject: 'Your Laptop Reservation is Overdue!',
-        text: `Your reservation with ID ${reservationDetails.reservation_id} is overdue by ${reservationDetails.overdueDays} days. The total amount due is $${reservationDetails.amount_due}.`            
-      };
-
-      await transporter.sendMail(mailOptions);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: 'Overdue email sent successfully' }));
     } catch (error) {
-      console.error('Error sending overdue email:', error);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: 'Failed to send overdue email', error: error.message }));
+      console.error('Error processing request data:', error);
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
     }
   });
   return;
