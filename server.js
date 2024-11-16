@@ -1635,6 +1635,120 @@ if (req.method === 'GET' && req.url === '/RoomReserveTable') {
                                                             //Sahirs Code
 
 
+
+
+
+
+
+
+///////////////////////////////TESTING NEW BOOK RESERVATION
+
+else if (req.method === 'POST' && req.url.startsWith('/_bookReservation')) {
+  const userData = authenticateToken(req, res);
+  if(!userData) return;
+
+  try {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on('end', () => {
+      const { book_id } = JSON.parse(body);
+
+      if (!book_id) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Book ID is required' }));
+        return;
+      }
+
+      // Query to get the ISBN for the provided book_id
+      const getIsbnQuery = `
+        SELECT isbn FROM book WHERE book_id = ?
+      `;
+
+      connection.query(getIsbnQuery, [book_id], (isbnError, isbnResults) => {
+        if (isbnError || isbnResults.length === 0) {
+          console.error('Error fetching ISBN:', isbnError);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to fetch ISBN for the book' }));
+          return;
+        }
+
+        const isbn = isbnResults[0].isbn;
+
+        // Query to find the maximum queue_position for the same ISBN with pending status
+        const maxQueueQuery = `
+          SELECT MAX(queue_position) AS max_queue
+          FROM book_reservations br
+          JOIN book b ON br.book_id = b.book_id
+          WHERE b.isbn = ? AND br.reservation_status = 'pending'
+        `;
+
+        connection.query(maxQueueQuery, [isbn], (maxQueueError, maxQueueResults) => {
+          if (maxQueueError) {
+            console.error('Error fetching max queue position:', maxQueueError);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to determine queue position' }));
+            return;
+          }
+
+          // Determine the new queue position
+          const maxQueue = maxQueueResults[0].max_queue || 0;
+          const newQueuePosition = maxQueue + 1;
+
+          // Insert the new reservation with the calculated queue position
+          const reservationStatus = 'pending';
+          const dateBorrowed = new Date();
+          const dateDue = new Date();
+          dateDue.setDate(dateBorrowed.getDate() + 14); // Set due date to 2 weeks from now
+
+          const insertReservationQuery = `
+            INSERT INTO book_reservations (book_id, user_id, reservation_status, date_borrowed, date_due, queue_position)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `;
+
+          connection.query(
+            insertReservationQuery,
+            [book_id, userData.user_ID, reservationStatus, dateBorrowed, dateDue, newQueuePosition],
+            (insertError, insertResults) => {
+              if (insertError) {
+                console.error('Error inserting reservation:', insertError);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Failed to create book reservation' }));
+                return;
+              }
+
+              console.log('Reservation successfully created:', insertResults);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(
+                JSON.stringify({
+                  message: 'Book reservation created successfully',
+                  queue_position: newQueuePosition,
+                })
+              );
+            }
+          );
+        });
+      });
+    });
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'An unexpected error occurred' }));
+  }
+}
+
+
+////////////////////END TEST BOOK RESERVATION
+
+
+
+
+
+
+
+
 // Laptop Entry Route
 else if (req.method === 'POST' && req.url === '/_laptopEntry') {
   let body = '';
