@@ -1680,41 +1680,48 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
 }
 
 
-// Book table reservations route
-if (req.method === 'GET' && req.url.startsWith('/booktable_reservations')) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  
-  if (!token) {
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'No token provided' }));
-    return;
+// GET /booktable_reservations - Fetch all reservations
+if (req.method === 'GET' && req.url === '/booktable_reservations') {
+  try {
+    const reservations = await queryDatabase(
+      `SELECT reservation_id, book_id, user_id, reservation_date_time, reservation_status, 
+              book_title, book_author, date_borrowed, date_due, date_returned
+       FROM book_reservations`
+    );
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(reservations));
+  } catch (error) {
+    console.error('Error fetching reservations:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Failed to fetch reservations' }));
   }
-
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid token' }));
-      return;
-    }
-
-    const userId = decoded.user_ID;
-    const query = 'SELECT * FROM book_reservations WHERE user_id = ?';
-    const params = [userId];
-
-    connection.query(query, params, (err, results) => {
-      if (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Database error' }));
-        return;
-      }
-
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(results));
-    });
-  });
 }
 
+// POST /cancel-reservation - Cancel a reservation by ID
+else if (req.method === 'POST' && req.url === '/cancel-reservation') {
+  let body = '';
+  req.on('data', chunk => {
+    body += chunk;
+  });
+  req.on('end', async () => {
+    try {
+      const { reservationId } = JSON.parse(body);
+
+      // Update reservation status to "Canceled"
+      await queryDatabase(
+        `UPDATE book_reservations SET reservation_status = 'Canceled' WHERE reservation_id = ?`,
+        [reservationId]
+      );
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+    } catch (error) {
+      console.error('Error canceling reservation:', error);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Failed to cancel reservation' }));
+    }
+  });
+}
 
 
 
