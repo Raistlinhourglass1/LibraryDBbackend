@@ -202,7 +202,7 @@ const server = http.createServer(async (req, res) => {
     ////END TEST//////
     
     ////get all book catalog
-    if (req.method === 'GET' && req.url.startsWith('/catalog')) {
+    if (req.method === 'GET' && req.url === ('/catalog')) {
      
       const sql = `SELECT *, 'book' AS source FROM book;
     `;
