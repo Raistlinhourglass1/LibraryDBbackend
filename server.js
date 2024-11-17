@@ -1351,71 +1351,59 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
 
 
   //feedback route
-  else if (req.method === 'POST' && req.url === '/feedback') {
-    const userData = authenticateToken(req, res);
-    if (!userData) return; 
-  
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
-  
-    req.on('end', async () => {
-      try {
-        const data = JSON.parse(body);
-        const { bookName, bookAuthor, rating, comments, type } = data;
-  
-        if (!bookName || !bookAuthor || !rating) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ message: 'Missing required feedback fields' }));
+ else if (req.method === 'POST' && req.url === '/feedback') {
+  const userData = authenticateToken(req, res);
+  if (!userData) return;
+
+  let body = '';
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+
+  req.on('end', async () => {
+    try {
+      const data = JSON.parse(body);
+      const { bookName, bookAuthor, rating, comments, type, bookIsbn } = data;
+
+      if (!bookName || !bookAuthor || !rating || !bookIsbn) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Missing required feedback fields' }));
+        return;
+      }
+
+      // Insert feedback into the database
+      const insertFeedbackSql = `
+        INSERT INTO feedback (book_isbn, user_id, book_name, book_author, rating, description, type)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `;
+      const values = [
+        bookIsbn,
+        userData.user_ID,
+        bookName,
+        bookAuthor,
+        rating,
+        comments || null,
+        type || 'general',
+      ];
+
+      connection.query(insertFeedbackSql, values, (err, result) => {
+        if (err) {
+          console.error('Error inserting feedback:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Error submitting feedback' }));
           return;
         }
-  
-        const checkSql = 'SELECT isbn FROM book WHERE book_title = ?';
-  
-        connection.query(checkSql, [bookName], (err, results) => {
-          if (err) {
-            console.error('Error checking book data:', err);
-            if (!res.headersSent) {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Error checking book data' }));
-            }
-            return;
-          }
-  
-          if (results.length > 0) {
-            const isbn = results[0].isbn;
-  
-            // Insert feedback into the database
-            const insertFeedbackSql = `
-              INSERT INTO feedback (book_isbn, user_id, book_name, book_author, rating, description, type)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `;
-            const values = [isbn, userData.user_ID, bookName, bookAuthor, rating, comments || null, type || 'general'];
-  
-            connection.query(insertFeedbackSql, values, (err, result) => {
-              if (err) {
-                console.error('Error inserting feedback:', err);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: 'Error submitting feedback' }));
-                return;
-              }
-  
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Feedback submitted successfully' }));
-            });
-          } else {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'Book not found' }));
-          }
-        });
-      } catch (error) {
-        console.error('Error processing feedback:', error);
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Invalid request data' }));
-      }
-    });
-  }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Feedback submitted successfully' }));
+      });
+    } catch (error) {
+      console.error('Error processing feedback:', error);
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
+    }
+  });
+}
 
 
 //reports route
