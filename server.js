@@ -2815,19 +2815,17 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
 
   req.on('end', async () => {
     try {
-      const { reservation_id } = JSON.parse(body);
-      
-      // Check for reservation_id in request body
-      if (!reservation_id) {
+      const { reservation_id, overdueDays, amount_due } = JSON.parse(body); // Get `overdueDays` and `amount_due` directly from frontend
+
+      // Validate the request body
+      if (!reservation_id || overdueDays == null || amount_due == null) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Missing reservation ID' }));
+        res.end(JSON.stringify({ message: 'Missing reservation details' }));
         return;
       }
 
-      // Query only relevant fields from `laptop_reservations`
-      const query = `SELECT overdueDays, amount_due, send_overdue_email 
-                     FROM laptop_reservations 
-                     WHERE reservation_id = ?`;
+      // Check `send_overdue_email` in the database
+      const query = `SELECT send_overdue_email FROM laptop_reservations WHERE reservation_id = ?`;
       
       connection.query(query, [reservation_id], async (err, results) => {
         if (err) {
@@ -2843,7 +2841,7 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
           return;
         }
 
-        const { overdueDays, amount_due, send_overdue_email } = results[0];
+        const { send_overdue_email } = results[0];
 
         // Only send an email if `send_overdue_email` is set to 1
         if (send_overdue_email === 1) {
