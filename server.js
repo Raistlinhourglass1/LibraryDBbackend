@@ -2816,7 +2816,7 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
   req.on('end', async () => {
     try {
       const { reservation_id, overdueDays, amount_due } = JSON.parse(body); // Get `overdueDays` and `amount_due` directly from frontend
-
+      console.log("Received data on backend:", { reservation_id, overdueDays, amount_due });
       // Validate the request body
       if (!reservation_id || overdueDays == null || amount_due == null) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
