@@ -2807,24 +2807,25 @@ if (req.method === 'POST' && req.url === '/staff') {
 
 // Route for sending overdue email (authenticated)
 if (req.method === 'POST' && req.url === '/send-overdue-email') {
-  const userData = authenticateToken(req, res);
+  const userData = authenticateToken(req, res); // Extract email from token
   if (!userData) return;
 
   let body = '';
   req.on('data', (chunk) => { body += chunk.toString(); });
-  
+
   req.on('end', async () => {
     try {
       const { reservation_id } = JSON.parse(body);
       
+      // Check for reservation_id in request body
       if (!reservation_id) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Missing reservation ID' }));
         return;
       }
 
-      // Fetch reservation details and check if overdue email should be sent
-      const query = `SELECT user_email, overdueDays, amount_due, send_overdue_email 
+      // Query only relevant fields from `laptop_reservations`
+      const query = `SELECT overdueDays, amount_due, send_overdue_email 
                      FROM laptop_reservations 
                      WHERE reservation_id = ?`;
       
@@ -2842,13 +2843,13 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
           return;
         }
 
-        const { user_email, overdueDays, amount_due, send_overdue_email } = results[0];
+        const { overdueDays, amount_due, send_overdue_email } = results[0];
 
-        // Only send an email if send_overdue_email is set to 1
+        // Only send an email if `send_overdue_email` is set to 1
         if (send_overdue_email === 1) {
           const transporter = nodemailer.createTransport({
             host: 'smtp.gmail.com',
-            port : 465,
+            port: 465,
             secure: true,
             auth: {
               user: 'hendrixjustin908@gmail.com',
@@ -2858,7 +2859,7 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
 
           const mailOptions = {
             from: 'hendrixjustin908@gmail.com',
-            to: user_email, 
+            to: userData.email, // Get email directly from the authenticated user data
             subject: 'Your Laptop Reservation is Overdue!',
             text: `Your reservation with ID ${reservation_id} is overdue by ${overdueDays} days. The total amount due is $${amount_due}.`
           };
@@ -2866,7 +2867,7 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
           try {
             await transporter.sendMail(mailOptions);
 
-            // Update the send_overdue_email column to 0 after successful email
+            // Update `send_overdue_email` to 0 after successful email
             const updateQuery = `UPDATE laptop_reservations SET send_overdue_email = 0 WHERE reservation_id = ?`;
             connection.query(updateQuery, [reservation_id], (updateErr) => {
               if (updateErr) {
@@ -2896,7 +2897,6 @@ if (req.method === 'POST' && req.url === '/send-overdue-email') {
   });
   return;
 }
-
 
 // GET /booktable_reservations - Fetch all reservations
 if (req.method === 'GET' && req.url === '/booktable_reservations') {
