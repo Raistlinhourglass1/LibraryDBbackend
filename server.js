@@ -861,6 +861,213 @@ if (req.method === 'PUT' && req.url === '/cancel-reservation') {
 
 
 //////cancel reservation end
+
+/////////STAFF CHOICE BOOKS START
+
+if (req.method === 'GET' && req.url === '/staff-choice') {
+  // Query to get staff choice details from `staff_choice` and join with `book`
+  const query = `
+      SELECT sc.choice_id AS choice_id, 
+             sc.book_id, 
+             b.book_title AS book_title, 
+             b.author AS book_author, 
+             b.book_category AS book_category,
+             b.isbn AS isbn, 
+             sc.selected_date
+      FROM staff_choice sc
+      INNER JOIN book b ON sc.book_id = b.book_id
+  `;
+
+  connection.query(query, (err, results) => {
+      if (err) {
+          console.error('Database query error:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Error retrieving data from the database' }));
+          return;
+      }
+
+      if (results.length === 0) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'No staff choice found' }));
+          return;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(results));
+  });
+}
+
+////////STAFF CHOICE BOOKS END
+
+///LATEST ENTRIES BOOKS START
+
+if (req.method === 'GET' && req.url === '/latest-entries') {
+  // SQL query to fetch all data from the `top_books` view
+  const query = 'SELECT * FROM top_books';
+
+  connection.query(query, (err, results) => {
+      if (err) {
+          console.error('Database query error:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Error retrieving data from the database' }));
+          return;
+      }
+
+      if (results.length === 0) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'No top books found' }));
+          return;
+      }
+
+      // Return the results from the top_books view
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(results));
+  });
+}
+
+///////LATEST ENTRIES BOOKS END
+
+
+/////////ADD BOOK TO LIST
+if (req.method === 'POST' && req.url === '/add-to-list') {
+  const decoded = authenticateToken(req, res);
+  if (!decoded) return;
+
+  console.log("Decoded token:", decoded);
+    let body = '';
+
+    req.on('data', chunk => {
+      body += chunk.toString(); // Collect the request body
+    });
+
+    req.on('end', () => {
+      const { book_id, isbn } = JSON.parse(body);
+
+      if (!book_id) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Book ID is required' }));
+        return;
+      }
+
+      // Insert the user_id and book_id into the database
+      const query = 'INSERT INTO user_list (user_id, book_id, book_isbn) VALUES (?, ?, ?)';
+      connection.query(query, [decoded.user_ID, book_id, isbn], (err, result) => {
+        if (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'Failed to add book to list', error: err }));
+          return;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Book added to list successfully' }));
+      });
+    });
+  }
+
+
+/////////////ADD BOOK TO LIST END
+
+////CHECK USER LIST 
+
+
+if (req.method === 'GET' && req.url.startsWith('/user-list')) {
+  const decoded = authenticateToken(req, res);
+  if (!decoded) return;
+
+  console.log("Decoded token:", decoded);
+
+  const isbn = req.url.split('/user-list/')[1];
+
+  if (!isbn) {
+    res.statusCode = 400;
+    res.end('ISBN is required');
+    return;
+  }
+
+  console.log('Received ISBN:', isbn);
+
+    const sql = `
+      SELECT *
+      FROM user_list
+      WHERE user_id = ? AND book_isbn = ?
+    `;
+
+    connection.query(sql, [decoded.user_ID, isbn], (error, results) => {
+      if (error) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: 'Database error' }));
+        return;
+      }
+
+      if (results.length === 0) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify([])); // Return an empty array if no books are found
+        return;
+      }
+      console.log('Backend query results:', results);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(results));
+    });
+}
+
+////CHECK USER LIST END
+
+////////DELETE BOOK FROM USER LIST START
+
+if (req.method === 'DELETE' && req.url === '/user-list') {
+  const decoded = authenticateToken(req, res);
+  if (!decoded) return;
+
+  console.log("Decoded token:", decoded);
+
+  let body = '';
+
+  // Collect data from the request body
+  req.on('data', chunk => {
+    body += chunk.toString();
+  });
+
+  req.on('end', async () => {
+    const { book_id, isbn } = JSON.parse(body);
+    
+    if (!book_id || !isbn || !decoded) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: 'Missing book_id, isbn, or token' }));
+      return;
+    }
+
+    try {
+
+      // Delete the entry from the user_list table
+      const query = 'DELETE FROM user_list WHERE user_id = ? AND book_id = ?';
+      connection.query(query, [decoded.user_ID, book_id], (error, results) => {
+        if (error) {
+          console.error('Database error:', error);
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: 'Internal Server Error' }));
+          return;
+        }
+
+        if (results.affectedRows === 0) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: 'Entry not found' }));
+        } else {
+          console.log(`Deleted book with book_id ${book_id} and isbn ${isbn} for user_id ${decoded.user_ID}`);
+          res.statusCode = 200;
+          res.end(JSON.stringify({ message: 'Book removed from user list' }));
+        }
+      });
+    } catch (err) {
+      console.error('Token error:', err);
+      res.statusCode = 401;
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
+    }
+  });
+}
+
+///////////DELETE BOOK FROM USER LIST END
+
   
   
   
