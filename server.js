@@ -478,54 +478,6 @@ const server = http.createServer(async (req, res) => {
     });
   }
   
-  /**
-   * Helper function to check out a book and create a reservation record.
-   */
-  function checkOutBook(bookId, userId, res) {
-    // Update the status of the book to 'checked_out'
-    const updateQuery = `
-      UPDATE book 
-      SET book_status = 'checked_out' 
-      WHERE book_id = ?;
-    `;
-    connection.query(updateQuery, [bookId], (err, updateResult) => {
-      if (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Error checking out book.' }));
-        return;
-      }
-  
-      // Insert a new record into book_reservations
-      const dateBorrowed = new Date();
-      const dueDate = new Date();
-      dueDate.setDate(dateBorrowed.getDate() + 14);
-  
-      const insertReservationQuery = `
-        INSERT INTO book_reservations (user_id, book_id, reservation_status, queue_position, date_borrowed, date_due)
-        VALUES (?, ?, 'fulfilled', 0, ?, ?);
-      `;
-      connection.query(
-        insertReservationQuery,
-        [userId, bookId, dateBorrowed, dueDate],
-        (err, reservationResult) => {
-          if (err) {
-            console.error('Error creating reservation record:', err); // Log the error details
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'Error creating reservation record.', error: err }));
-            return;
-          }
-  
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            message: 'Book successfully checked out.',
-            book_id: bookId,
-            reservation_id: reservationResult.insertId,
-          }));
-        }
-      );
-    });
-  }
-  
     //send audiobook data to server
     if(req.method === 'POST' && req.url === '/catalog-entry/audiobook') {
       let body = '';
