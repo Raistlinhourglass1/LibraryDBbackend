@@ -3398,7 +3398,7 @@ if (req.method === 'POST' && req.url === '/send-book-ready-email') {
           });
 
           const mailOptions = {
-            from: process.env.SMTP_USER,
+            from: 'hendrixjustin908@gmail.com',
             to: userEmail,
             subject: 'Your Reserved Book is Ready for Pickup!',
             text: `Hello! The book "${bookTitle}" is now available for pickup.`
