@@ -5,7 +5,16 @@ const bcrypt = require('bcryptjs');
 const { parse } = require('querystring');
 const { URL } = require('url');
 const nodemailer = require('nodemailer');
+const formidable = require('formidable');
+const fs = require('fs');
+const multer = require('multer');
+const path = require('path');
 
+const uploadsDir = path.join(__dirname, 'uploads');  // Correct directory path as string
+
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // JWT secret key
 const JWT_SECRET = 'your_jwt_secret_key_';
@@ -28,6 +37,17 @@ connection.connect((err) => {
 });
 
 
+// Configure Multer storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, './uploads/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ storage: storage });
 
 
 
@@ -479,38 +499,62 @@ const server = http.createServer(async (req, res) => {
   }
   
     //send audiobook data to server
-    if(req.method === 'POST' && req.url === '/catalog-entry/audiobook') {
-      let body = '';
-  
-      req.on('data', (chunk) => {
-        body += chunk.toString(); //convert buffer to string
-      });
-      req.on('end', () => {
-  
-          const abookEntryData = JSON.parse(body);
-          const { abIsbn, abTitle, abAuthor, abNarrator,abPublisher, 
-            abCategory, abEdition, abLanguage, abDate, abDuration,  abFormat,  
-            abSummary, abNotes } = abookEntryData
-          
-        //would check for existing book. is this necessary tho
-        //const checkSql = 'SELECT * FROM books WHERE isbn = ?';
-          const insertSql = 
-          'INSERT INTO audiobook (audio_isbn, audio_title, audio_author, audio_narrator, audio_publisher, audio_category, audio_edition, audio_language, date_published, duration, format, availability, audio_summary, audio_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-          
-          connection.query(insertSql, [abIsbn, abTitle, abAuthor, abNarrator,abPublisher, 
-            abCategory, abEdition, abLanguage, abDate, abDuration,  abFormat, 1,  
-            abSummary, abNotes], (err, result) => {
-            if (err) {
-              console.error('Error inserting audiobook data: ', err);
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Error inserting audiobook data' }));
-              return;
-            }
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Audiobook added successfully' }));
-        });
-      });
+  if (req.method === 'POST' && req.url === '/catalog-entry/audiobook') {
+    // Authenticate the request using JWT token (same as in the ProfilePage)
+    const user = authenticateToken(req, res);
+    if (!user) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Authentication required' }));
+        return; // If the token is invalid or missing, return
     }
+
+    // Handle the multipart/form-data (file upload)
+    upload.single('abFile')(req, res, (err) => {
+        if (err) {
+            console.error('Error handling file upload:', err);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Error uploading file' }));
+            return;
+        }
+
+        // Process form data after file upload
+        const { abISBN, abTitle, abAuthor, abNarrator, abPublisher, abCategory, abEdition, abLanguage, abDate, abDuration, abFormat, abSummary, abNotes } = req.body;
+        const abFilePath = req.file ? req.file.path : ''; // Get the file path
+
+        // Log incoming data for debugging
+        console.log("Received audiobook data:", { abISBN, abTitle, abAuthor, abNarrator, abPublisher, abCategory, abEdition, abLanguage, abDate, abDuration, abFormat, abSummary, abNotes, abFilePath });
+
+        // Validate the required fields
+        if (!abISBN || !abTitle || !abAuthor || !abNarrator || !abPublisher || !abCategory || !abLanguage || !abDate || !abDuration || !abFormat) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'All required fields must be provided' }));
+            return;
+        }
+
+        // SQL query to insert the audiobook entry
+        const insertSql = `
+            INSERT INTO audiobook 
+            (audio_file, audio_isbn, audio_title, audio_author, audio_narrator, audio_publisher, audio_category, audio_edition, audio_language, date_published, duration, format, availability, audio_summary, audio_notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        // Insert the audiobook data into the database
+        connection.query(insertSql, [
+            abFilePath, abISBN, abTitle, abAuthor, abNarrator, abPublisher, abCategory, abEdition,
+            abLanguage, abDate, abDuration, abFormat, 1, abSummary, abNotes
+        ], (err, result) => {
+            if (err) {
+                console.error('Error inserting audiobook data:', err);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'Error inserting audiobook data' }));
+                return;
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Audiobook added successfully' }));
+        });
+    });
+}
   
    //send ebook data to server
    if(req.method === 'POST' && req.url === '/catalog-entry/ebook') {
