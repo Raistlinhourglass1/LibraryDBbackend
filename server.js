@@ -236,6 +236,70 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify(results || []));    
       });
     }
+
+     ////get all book catalog
+  if (req.method === 'GET' && req.url.startsWith('/get-all-books')) {
+   
+    const sql = `SELECT *, 'book' AS source FROM book;
+  `;
+
+  connection.query(sql, (error, results) => {
+       if (error) {
+          res.end(JSON.stringify({ error: 'Error fetching catalog data' }));
+          return;
+        }
+
+        return res.end(JSON.stringify(results || []));    
+    });
+  }
+
+  ////get all audiobooks
+  if (req.method === 'GET' && req.url.startsWith('/get-all-audiobooks')) {
+   
+    const sql = `SELECT *, 'audiobook' AS source FROM audiobook;
+  `;
+
+  connection.query(sql, (error, results) => {
+       if (error) {
+          res.end(JSON.stringify({ error: 'Error fetching catalog data' }));
+          return;
+        }
+
+        return res.end(JSON.stringify(results || []));    
+    });
+  }
+
+  ////get all audiobooks
+  if (req.method === 'GET' && req.url.startsWith('/get-all-ebooks')) {
+   
+    const sql = `SELECT *, 'ebook' AS source FROM ebook;
+  `;
+
+  connection.query(sql, (error, results) => {
+       if (error) {
+          res.end(JSON.stringify({ error: 'Error fetching catalog data' }));
+          return;
+        }
+
+        return res.end(JSON.stringify(results || []));    
+    });
+  }
+
+    ////get all periodicals
+  if (req.method === 'GET' && req.url.startsWith('/get-all-periodicals')) {
+   
+    const sql = `SELECT *, 'periodical' AS source FROM periodicaL;
+  `;
+
+  connection.query(sql, (error, results) => {
+       if (error) {
+          res.end(JSON.stringify({ error: 'Error fetching catalog data' }));
+          return;
+        }
+
+        return res.end(JSON.stringify(results || []));    
+    });
+  }
   
   
   
@@ -1063,6 +1127,233 @@ if (req.method === 'DELETE' && req.url === '/user-list') {
 }
 
 ///////////DELETE BOOK FROM USER LIST END
+
+////////AUDIO BOOK DELETE
+
+if (req.method === 'PUT' && req.url === '/soft-delete-audiobook') {
+  try {
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+
+    const data = JSON.parse(Buffer.concat(buffers).toString());
+    const { book_id } = data;
+
+    if (!book_id) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ message: 'Book ID is required' }));
+      return;
+    }
+
+    // Update the deleted column to 1 (true)
+    const query = `UPDATE audiobook SET deleted = 1 WHERE audiobook_id = ?`;
+    
+    connection.query(query, [book_id], (err, result) => {
+      if (err) {
+        console.error('Database Error:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Error deleting book' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Audiobook marked as deleted successfully' }));
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.writeHead(500);
+    res.end(JSON.stringify({ message: 'Internal Server Error' }));
+  }
+}
+
+//////RESTORE AUDIO BOOK
+
+if (req.method === 'PUT' && req.url === '/restore-audiobook') {
+  try {
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+
+    const data = JSON.parse(Buffer.concat(buffers).toString());
+    const { book_id } = data;
+
+    if (!book_id) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ message: 'Book ID is required' }));
+      return;
+    }
+
+    // Update the deleted column to 0 (false) to restore the book
+    const query = `UPDATE audiobook SET deleted = 0 WHERE audiobook_id = ?`;
+    
+    connection.query(query, [book_id], (err, result) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Error restoring book' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Audiobook restored successfully' }));
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.writeHead(500);
+    res.end(JSON.stringify({ message: 'Internal Server Error' }));
+  }
+}
+
+
+/////////EBOOK DELETE
+
+if (req.method === 'PUT' && req.url === '/soft-delete-ebook') {
+  try {
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+
+    const data = JSON.parse(Buffer.concat(buffers).toString());
+    const { book_id } = data;
+
+    if (!book_id) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ message: 'Book ID is required' }));
+      return;
+    }
+
+    // Update the deleted column to 1 (true)
+    const query = `UPDATE ebook SET deleted = 1 WHERE ebook_id = ?`;
+    
+    connection.query(query, [book_id], (err, result) => {
+      if (err) {
+        console.error('Database Error:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Error deleting book' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'eBook marked as deleted successfully' }));
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.writeHead(500);
+    res.end(JSON.stringify({ message: 'Internal Server Error' }));
+  }
+}
+
+//////RESTORE EBOOK
+
+if (req.method === 'PUT' && req.url === '/restore-ebook') {
+  try {
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+
+    const data = JSON.parse(Buffer.concat(buffers).toString());
+    const { book_id } = data;
+
+    if (!book_id) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ message: 'Book ID is required' }));
+      return;
+    }
+
+    // Update the deleted column to 0 (false) to restore the book
+    const query = `UPDATE ebook SET deleted = 0 WHERE ebook_id = ?`;
+    
+    connection.query(query, [book_id], (err, result) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Error restoring book' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'eBook restored successfully' }));
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.writeHead(500);
+    res.end(JSON.stringify({ message: 'Internal Server Error' }));
+  }
+}
+
+
+////PERIODICAL DELETE
+if (req.method === 'PUT' && req.url === '/soft-delete-periodical') {
+  try {
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+
+    const data = JSON.parse(Buffer.concat(buffers).toString());
+    const { book_id } = data;
+
+    if (!book_id) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ message: 'Book ID is required' }));
+      return;
+    }
+
+    // Update the deleted column to 1 (true)
+    const query = `UPDATE periodical SET deleted = 1 WHERE periodical_id = ?`;
+    
+    connection.query(query, [book_id], (err, result) => {
+      if (err) {
+        console.error('Database Error:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Error deleting book' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Periodical marked as deleted successfully' }));
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.writeHead(500);
+    res.end(JSON.stringify({ message: 'Internal Server Error' }));
+  }
+}
+
+//////RESTORE PERIODICAL
+
+if (req.method === 'PUT' && req.url === '/restore-periodical') {
+  try {
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+
+    const data = JSON.parse(Buffer.concat(buffers).toString());
+    const { book_id } = data;
+
+    if (!book_id) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ message: 'Book ID is required' }));
+      return;
+    }
+
+    // Update the deleted column to 0 (false) to restore the book
+    const query = `UPDATE periodical SET deleted = 0 WHERE periodical_id = ?`;
+    
+    connection.query(query, [book_id], (err, result) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Error restoring book' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Periodical restored successfully' }));
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.writeHead(500);
+    res.end(JSON.stringify({ message: 'Internal Server Error' }));
+  }
+}
+
 
   
   
