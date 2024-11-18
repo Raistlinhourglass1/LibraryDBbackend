@@ -3314,6 +3314,7 @@ const processNotificationQueue = () => {
       return;
     }
 
+
     notifications.forEach(async (notification) => {
       const { id, user_id, book_id } = notification;
 
@@ -3348,8 +3349,9 @@ setInterval(processNotificationQueue, 30000); // 30000ms = 30 seconds for testin
 
 // Route for sending "book ready" notification email
 if (req.method === 'POST' && req.url === '/send-book-ready-email') {
-  const userData = authenticateToken(req, res); // Extract user details from token if needed
-  if (!userData) return;
+  // Remove the token authentication check
+  // const userData = authenticateToken(req, res); 
+  // if (!userData) return;
 
   let body = '';
   req.on('data', (chunk) => { body += chunk.toString(); });
@@ -3385,7 +3387,6 @@ if (req.method === 'POST' && req.url === '/send-book-ready-email') {
 
           const bookTitle = bookResults[0].title;
 
-          // Nodemailer transporter using environment variables
           const transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST,
             port: parseInt(process.env.SMTP_PORT),
@@ -3421,9 +3422,6 @@ if (req.method === 'POST' && req.url === '/send-book-ready-email') {
     }
   });
 }
-
-
-
 
 
 
