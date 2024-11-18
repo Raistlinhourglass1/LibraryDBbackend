@@ -3278,6 +3278,61 @@ else if (req.method === 'POST' && req.url === '/cancel-laptop-reservation') {
 //Justins Code
 
 
+
+
+// Define the function to process notifications
+const processNotificationQueue = () => {
+  const query = `SELECT * FROM notifications_queue WHERE processed = 0 AND action_type = 'book_ready' LIMIT 10`;
+
+  connection.query(query, (err, notifications) => {
+    if (err) {
+      console.error('Error fetching notifications:', err);
+      return;
+    }
+
+    notifications.forEach(async (notification) => {
+      const { id, user_id, book_id } = notification;
+
+      try {
+        // Call the /send-book-ready-email route to send the email notification
+        const response = await axios.post(`https://librarydbbackend.onrender.com/send-book-ready-email`, {
+          userId: user_id,
+          bookId: book_id
+        });
+
+        if (response.status === 200) {
+          // Mark the notification as processed in the database
+          connection.query(`UPDATE notifications_queue SET processed = 1 WHERE id = ?`, [id], (updateErr) => {
+            if (updateErr) {
+              console.error(`Error marking notification ${id} as processed:`, updateErr);
+            } else {
+              console.log(`Notification ID ${id} processed successfully.`);
+            }
+          });
+        } else {
+          console.error(`Failed to send email for notification ID ${id}`);
+        }
+      } catch (error) {
+        console.error(`Error processing notification ID ${id}:`, error);
+      }
+    });
+  });
+};
+
+// Schedule processNotificationQueue to run every minute
+setInterval(processNotificationQueue, 60000); // 60000ms = 1 minute
+
+
+
+
+
+
+
+
+
+
+
+
 // Route for sending "book ready" notification email
 if (req.method === 'POST' && req.url === '/send-book-ready-email') {
   const userData = authenticateToken(req, res); // Extract user details from token if needed
