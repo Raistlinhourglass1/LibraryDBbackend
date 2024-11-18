@@ -3027,9 +3027,15 @@ else if (req.method === 'GET' && req.url.startsWith('/get-calculators')) {
 // Backend route handler:
 else if (req.method === 'POST' && req.url === '/cancel-cal-reservation') {
   console.log("Reached /cancel-cal-reservation route");
-  
+
   const userData = authenticateToken(req, res);
-  if (!userData) return;
+  if (!userData) {
+    console.log("Authentication failed - no user data");
+    res.statusCode = 401;
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return;
+  }
+  console.log("Authenticated user ID:", userData.user_ID);
 
   let body = '';
   req.on('data', chunk => {
@@ -3040,6 +3046,9 @@ else if (req.method === 'POST' && req.url === '/cancel-cal-reservation') {
     const data = JSON.parse(body);
     const { reservationId, calculatorId } = data;
 
+    console.log("Parsed reservationId:", reservationId);
+    console.log("Parsed calculatorId:", calculatorId);
+
     // Begin transaction
     connection.beginTransaction(err => {
       if (err) {
@@ -3049,7 +3058,6 @@ else if (req.method === 'POST' && req.url === '/cancel-cal-reservation') {
         return;
       }
 
-      // Check if the reservation exists and is not already cancelled or fulfilled
       const checkReservationSql = `
         SELECT reservation_status 
         FROM calculator_reservations 
@@ -3057,29 +3065,32 @@ else if (req.method === 'POST' && req.url === '/cancel-cal-reservation') {
 
       connection.query(checkReservationSql, [reservationId, userData.user_ID], (err, result) => {
         if (err) {
-          return connection.rollback(() => {
-            console.error('Error checking reservation status:', err);
-            res.statusCode = 500;
-            res.end(JSON.stringify({ error: 'Error checking reservation status' }));
-          });
+          console.error('Error checking reservation status:', err);
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: 'Error checking reservation status' }));
+          return;
         }
 
+        console.log("Database query result:", result);
+
         if (result.length === 0) {
-          return connection.rollback(() => {
-            res.statusCode = 404;
-            res.end(JSON.stringify({ error: 'Reservation not found' }));
-          });
+          console.log("Reservation not found or user does not have permission.");
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: 'Reservation not found' }));
+          return;
         }
 
         const reservationStatus = result[0].reservation_status;
+        console.log("Current reservation status:", reservationStatus);
+
         if (reservationStatus === 'cancelled' || reservationStatus === 'fulfilled') {
-          return connection.rollback(() => {
-            res.statusCode = 400;
-            res.end(JSON.stringify({ error: 'Reservation is already cancelled or fulfilled' }));
-          });
+          console.log("Reservation is already cancelled or fulfilled");
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'Reservation is already cancelled or fulfilled' }));
+          return;
         }
 
-        // Proceed with the cancellation
+        // Proceed with cancellation
         const updateReservationSql = `
           UPDATE calculator_reservations 
           SET reservation_status = 'cancelled' 
@@ -3087,14 +3098,12 @@ else if (req.method === 'POST' && req.url === '/cancel-cal-reservation') {
 
         connection.query(updateReservationSql, [reservationId, userData.user_ID], (err, result) => {
           if (err) {
-            return connection.rollback(() => {
-              console.error('Error updating reservation:', err);
-              res.statusCode = 500;
-              res.end(JSON.stringify({ error: 'Error canceling reservation' }));
-            });
+            console.error('Error updating reservation:', err);
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: 'Error canceling reservation' }));
+            return;
           }
 
-          // Then update calculator status
           const updateCalculatorSql = `
             UPDATE Calculators 
             SET calculator_status = 0 
@@ -3102,24 +3111,21 @@ else if (req.method === 'POST' && req.url === '/cancel-cal-reservation') {
 
           connection.query(updateCalculatorSql, [calculatorId], (err, result) => {
             if (err) {
-              return connection.rollback(() => {
-                console.error('Error updating calculator status:', err);
-                res.statusCode = 500;
-                res.end(JSON.stringify({ error: 'Error updating calculator status' }));
-              });
+              console.error('Error updating calculator status:', err);
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: 'Error updating calculator status' }));
+              return;
             }
 
-            // Commit the transaction
             connection.commit(err => {
               if (err) {
-                return connection.rollback(() => {
-                  console.error('Error committing transaction:', err);
-                  res.statusCode = 500;
-                  res.end(JSON.stringify({ error: 'Error completing cancellation' }));
-                });
+                console.error('Error committing transaction:', err);
+                res.statusCode = 500;
+                res.end(JSON.stringify({ error: 'Error completing cancellation' }));
+                return;
               }
 
-              // Success response
+              console.log("Reservation canceled successfully");
               res.statusCode = 200;
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
