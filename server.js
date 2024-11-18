@@ -3388,12 +3388,12 @@ if (req.method === 'POST' && req.url === '/send-book-ready-email') {
           const bookTitle = bookResults[0].title;
 
           const transporter = nodemailer.createTransport({
-            host: process.env.SMTP_HOST,
-            port: parseInt(process.env.SMTP_PORT),
+            host: 'smtp.gmail.com',
+            port: 465,
             secure: true,
             auth: {
-              user: process.env.SMTP_USER,
-              pass: process.env.SMTP_PASS,
+              user: 'hendrixjustin908@gmail.com',
+              pass: 'lblh rxzb hyxz fwai',
             }
           });
 
