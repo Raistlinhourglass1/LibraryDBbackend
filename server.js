@@ -2756,57 +2756,81 @@ else if (req.method === 'POST' && req.url === '/cancel-cal-reservation') {
         return;
       }
 
-      // First update reservation status
-      const updateReservationSql = `
-        UPDATE calculator_reservations 
-        SET reservation_status = 'cancelled'
+      // Check if the reservation exists and is not already cancelled or fulfilled
+      const checkReservationSql = `
+        SELECT reservation_status 
+        FROM calculator_reservations 
         WHERE reservation_id = ? AND user_id = ?`;
 
-      connection.query(updateReservationSql, [reservationId, userData.user_ID], (err, result) => {
+      connection.query(checkReservationSql, [reservationId, userData.user_ID], (err, result) => {
         if (err) {
           return connection.rollback(() => {
-            console.error('Error updating reservation:', err);
+            console.error('Error checking reservation status:', err);
             res.statusCode = 500;
-            res.end(JSON.stringify({ error: 'Error canceling reservation' }));
+            res.end(JSON.stringify({ error: 'Error checking reservation status' }));
           });
         }
 
-        if (result.affectedRows === 0) {
+        if (result.length === 0) {
           return connection.rollback(() => {
             res.statusCode = 404;
-            res.end(JSON.stringify({ error: 'Reservation not found or already canceled' }));
+            res.end(JSON.stringify({ error: 'Reservation not found' }));
           });
         }
 
-        // Then update calculator status
-        const updateCalculatorSql = `
-          UPDATE Calculators 
-          SET calculator_status = 0 
-          WHERE calculator_id = ?`;
+        const reservationStatus = result[0].reservation_status;
+        if (reservationStatus === 'cancelled' || reservationStatus === 'fulfilled') {
+          return connection.rollback(() => {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: 'Reservation is already cancelled or fulfilled' }));
+          });
+        }
 
-        connection.query(updateCalculatorSql, [calculatorId], (err, result) => {
+        // Proceed with the cancellation
+        const updateReservationSql = `
+          UPDATE calculator_reservations 
+          SET reservation_status = 'cancelled' 
+          WHERE reservation_id = ? AND user_id = ?`;
+
+        connection.query(updateReservationSql, [reservationId, userData.user_ID], (err, result) => {
           if (err) {
             return connection.rollback(() => {
-              console.error('Error updating calculator status:', err);
+              console.error('Error updating reservation:', err);
               res.statusCode = 500;
-              res.end(JSON.stringify({ error: 'Error updating calculator status' }));
+              res.end(JSON.stringify({ error: 'Error canceling reservation' }));
             });
           }
 
-          // Commit the transaction
-          connection.commit(err => {
+          // Then update calculator status
+          const updateCalculatorSql = `
+            UPDATE Calculators 
+            SET calculator_status = 0 
+            WHERE calculator_id = ?`;
+
+          connection.query(updateCalculatorSql, [calculatorId], (err, result) => {
             if (err) {
               return connection.rollback(() => {
-                console.error('Error committing transaction:', err);
+                console.error('Error updating calculator status:', err);
                 res.statusCode = 500;
-                res.end(JSON.stringify({ error: 'Error completing cancellation' }));
+                res.end(JSON.stringify({ error: 'Error updating calculator status' }));
               });
             }
 
-            // Success response
-            res.statusCode = 200;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+            // Commit the transaction
+            connection.commit(err => {
+              if (err) {
+                return connection.rollback(() => {
+                  console.error('Error committing transaction:', err);
+                  res.statusCode = 500;
+                  res.end(JSON.stringify({ error: 'Error completing cancellation' }));
+                });
+              }
+
+              // Success response
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+            });
           });
         });
       });
@@ -2821,63 +2845,105 @@ else if (req.method === 'POST' && req.url === '/cancel-laptop-reservation') {
   if (!userData) return;
 
   let body = '';
-
-  req.on('data', (chunk) => {
+  req.on('data', chunk => {
     body += chunk.toString();
   });
 
   req.on('end', () => {
     const data = JSON.parse(body);
-    const { reservationId, laptopId } = data;  // Assuming the frontend provides the reservation ID and laptopID
+    const { reservationId, laptopId } = data;
 
-    // Update reservation status to "canceled"
-    const updateReservationStatusSql = `
-      UPDATE laptop_reservations 
-      SET reservation_status = 'cancelled' 
-      WHERE reservation_id = ? AND user_id = ?`;
-
-    connection.query(updateReservationStatusSql, [reservationId, userData.user_ID], (err, result) => {
+    // Begin transaction
+    connection.beginTransaction(err => {
       if (err) {
-        console.error('Error updating reservation status: ', err);
-        if (!res.headersSent) {
-          res.statusCode = 500;
-          res.end('Error canceling reservation');
-        }
+        console.error('Error starting transaction:', err);
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: 'Internal server error' }));
         return;
       }
 
-      if (result.affectedRows === 0) {
-        // No matching reservation found for the user, return an error
-        if (!res.headersSent) {
-          res.statusCode = 404;
-          res.end('Reservation not found or already canceled');
-        }
-        return;
-      }
+      // Check if the reservation exists and is not already cancelled or fulfilled
+      const checkReservationSql = `
+        SELECT reservation_status 
+        FROM laptop_reservations 
+        WHERE reservation_id = ? AND user_id = ?`;
 
-      // Set the room status back to available (room_status = 0)
-      const updateRoomStatusSql = 'UPDATE Laptops SET laptop_status = 0 WHERE laptop_ID = ?';
-      connection.query(updateRoomStatusSql, [laptopId], (err, result) => {
+      connection.query(checkReservationSql, [reservationId, userData.user_ID], (err, result) => {
         if (err) {
-          console.error('Error updating room status: ', err);
-          if (!res.headersSent) {
+          return connection.rollback(() => {
+            console.error('Error checking reservation status:', err);
             res.statusCode = 500;
-            res.end('Error updating room status');
-          }
-          return;
+            res.end(JSON.stringify({ error: 'Error checking reservation status' }));
+          });
         }
 
-        if (!res.headersSent) {
-          res.statusCode = 200;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+        if (result.length === 0) {
+          return connection.rollback(() => {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'Reservation not found' }));
+          });
         }
+
+        const reservationStatus = result[0].reservation_status;
+        if (reservationStatus === 'cancelled' || reservationStatus === 'fulfilled') {
+          return connection.rollback(() => {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: 'Reservation is already cancelled or fulfilled' }));
+          });
+        }
+
+        // Proceed with the cancellation
+        const updateReservationSql = `
+          UPDATE laptop_reservations 
+          SET reservation_status = 'cancelled' 
+          WHERE reservation_id = ? AND user_id = ?`;
+
+        connection.query(updateReservationSql, [reservationId, userData.user_ID], (err, result) => {
+          if (err) {
+            return connection.rollback(() => {
+              console.error('Error updating reservation:', err);
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: 'Error canceling reservation' }));
+            });
+          }
+
+          // Then update laptop status
+          const updateLaptopSql = `
+            UPDATE Laptops 
+            SET laptop_status = 0 
+            WHERE laptop_id = ?`;
+
+          connection.query(updateLaptopSql, [laptopId], (err, result) => {
+            if (err) {
+              return connection.rollback(() => {
+                console.error('Error updating laptop status:', err);
+                res.statusCode = 500;
+                res.end(JSON.stringify({ error: 'Error updating laptop status' }));
+              });
+            }
+
+            // Commit the transaction
+            connection.commit(err => {
+              if (err) {
+                return connection.rollback(() => {
+                  console.error('Error committing transaction:', err);
+                  res.statusCode = 500;
+                  res.end(JSON.stringify({ error: 'Error completing cancellation' }));
+                });
+              }
+
+              // Success response
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ message: 'Reservation canceled successfully' }));
+            });
+          });
+        });
       });
     });
   });
   return;
 }
-
 
 
 
@@ -3181,7 +3247,7 @@ else if (req.method === 'POST' && req.url === '/logout') {
   try {
     console.log('Attempting to fetch laptop reservations...');
     
-    const query = `SELECT reservation_id, laptop_id, user_id, reservation_date_time FROM laptop_reservations`;
+    const query = `SELECT reservation_id, laptop_id, user_id, reservation_date_time, reservation_status FROM laptop_reservations`;
     
     connection.query(query, (error, results) => {
       if (error) {
@@ -3206,7 +3272,7 @@ else if (req.method === 'POST' && req.url === '/logout') {
   try {
     console.log('Attempting to fetch laptop reservations...');
     
-    const query = `SELECT reservation_id, calculator_id, user_id, calc_type, model_name, reservation_date_time FROM calculator_reservations`;
+    const query = `SELECT reservation_id, calculator_id, user_id, calc_type, model_name, reservation_date_time, reservation_status  FROM calculator_reservations`;
     
     connection.query(query, (error, results) => {
       if (error) {
