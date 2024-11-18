@@ -1703,7 +1703,7 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
 
   req.on('end', () => {
     const data = JSON.parse(body);
-    const { specification, date, user_id, book_name, book_isbn, staff_id, teach_email, laptop_id, calc_id, period_type, room_num } = data;
+    const { specification, date, user_id, topBooks, book_name, book_isbn, staff_id, teach_email, laptop_id, calc_id, period_type, room_num, media_type } = data;
 
     let query = '';
     let params = [];
@@ -1741,26 +1741,28 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
         }
         break;
 
-      case 'most liked':
+        case 'most liked':
+          const limit = topBooks || 5;  // Default to 5 if no value is selected
           query = `
             SELECT 
-                b.book_title, 
-                b.author,
-                b.isbn, 
-                COUNT(DISTINCT r.feedback_id) AS review_count, 
-                AVG(r.rating) AS average_rating
+              b.book_title, 
+              b.author,
+              b.isbn, 
+              COUNT(DISTINCT r.feedback_id) AS review_count, 
+              AVG(r.rating) AS average_rating
             FROM 
-                book b
+              book b
             JOIN 
-                feedback r ON b.isbn = r.book_isbn
+              feedback r ON b.isbn = r.book_isbn
             GROUP BY 
-                b.isbn, b.book_title, b.author
+              b.isbn, b.book_title, b.author
             HAVING 
-                COUNT(DISTINCT r.feedback_id) >= 5
+              COUNT(DISTINCT r.feedback_id) >= 5  -- Ensuring books with less than 5 reviews are excluded
             ORDER BY 
-                average_rating DESC, review_count DESC
-            LIMIT 5;
+              average_rating DESC, review_count DESC
+            LIMIT ?;  -- Using parameterized query for limit
           `;
+          params.push(limit);  // Add the limit value dynamically
           break;
 
       case 'feedback':
@@ -1853,15 +1855,24 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
       
       //query all types of media we have
       case 'catalog':
-        query = `
-          SELECT book_title AS title, isbn, date_added, 'book' AS media_type FROM book
-          UNION ALL
-          SELECT audio_title AS title, audio_isbn AS isbn, date_added, 'audiobook' AS media_type FROM audiobook
-          UNION ALL
-          SELECT periodical_title AS title, periodical_issn, issue_date AS date_added, 'periodical' AS media_type FROM periodical
-          UNION ALL
-          SELECT ebook_title AS title, ebook_isbn AS isbn, date_added, 'ebook' AS media_type FROM ebook
+        let baseQuery = `
+          SELECT * FROM (
+            SELECT book_title AS title, isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'book' AS media_type FROM book
+            UNION ALL
+            SELECT audio_title AS title, audio_isbn AS isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'audiobook' AS media_type FROM audiobook
+            UNION ALL
+            SELECT periodical_title AS title, periodical_issn AS isbn, DATE_FORMAT(issue_date, '%Y-%m-%d %H:%i:%s') AS date_added, 'periodical' AS media_type FROM periodical
+            UNION ALL
+            SELECT ebook_title AS title, ebook_isbn AS isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'ebook' AS media_type FROM ebook
+          ) AS combined_media
         `;
+
+        if (media_type) {
+          baseQuery += ` WHERE media_type = ?`;
+          params.push(media_type);
+        }
+
+        query = baseQuery;
         break;
 
 
@@ -2030,7 +2041,7 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
           }
           break;
         
-        case 'session activity':
+          case 'session activity':
             query = `
               SELECT 
                 al.activity_id,
@@ -2041,7 +2052,7 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
                 al.description,
                 al.ip_address,
                 al.user_agent,
-                al.created_at
+                DATE_FORMAT(al.created_at, '%Y-%m-%d %H:%i:%s') AS created_at
               FROM activity_log al
               JOIN user u ON al.user_id = u.user_id
               WHERE 1=1
