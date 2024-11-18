@@ -1978,7 +1978,13 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
 
         case 'user transactions':
           query = `
-            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'book' AS media_type, br.book_title AS item_name, br.book_id AS item_id, br.reservation_date_time AS transaction_date
+            SELECT u.user_id, 
+                   CONCAT(u.first_name, ' ', u.last_name) AS username, 
+                   u.email, 
+                   'book' AS media_type, 
+                   br.book_title AS item_name, 
+                   br.book_id AS item_id, 
+                   DATE_FORMAT(br.reservation_date_time, '%Y-%m-%d %H:%i:%s') AS transaction_date
             FROM user u
             JOIN book_reservations br ON u.user_id = br.user_id
             WHERE 1=1
@@ -1988,13 +1994,19 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
             params.push(user_id);
           }
           if (date) {
-            query += ' AND br.reservation_date_time = ?';
+            query += ' AND DATE(br.reservation_date_time) = ?';
             params.push(date);
           }
 
           query += ` 
             UNION ALL
-            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'room' AS media_type, rr.room_number AS item_name, rr.room_number AS item_id, rr.reservation_date AS transaction_date
+            SELECT u.user_id, 
+                   CONCAT(u.first_name, ' ', u.last_name) AS username, 
+                   u.email, 
+                   'room' AS media_type, 
+                   rr.room_number AS item_name, 
+                   rr.room_number AS item_id, 
+                   DATE_FORMAT(rr.reservation_date, '%Y-%m-%d %H:%i:%s') AS transaction_date
             FROM user u
             JOIN room_reservations rr ON u.user_id = rr.user_id
             WHERE 1=1
@@ -2004,13 +2016,19 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
             params.push(user_id);
           }
           if (date) {
-            query += ' AND rr.reservation_date = ?';
+            query += ' AND DATE(rr.reservation_date) = ?';
             params.push(date);
           }
 
           query += `
             UNION ALL
-            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'laptop' AS media_type, lr.model_name AS item_name, lr.laptop_id AS item_id, lr.reservation_date_time AS transaction_date
+            SELECT u.user_id, 
+                   CONCAT(u.first_name, ' ', u.last_name) AS username, 
+                   u.email, 
+                   'laptop' AS media_type, 
+                   lr.model_name AS item_name, 
+                   lr.laptop_id AS item_id, 
+                   DATE_FORMAT(lr.reservation_date_time, '%Y-%m-%d %H:%i:%s') AS transaction_date
             FROM user u
             JOIN laptop_reservations lr ON u.user_id = lr.user_id
             WHERE 1=1
@@ -2020,13 +2038,19 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
             params.push(user_id);
           }
           if (date) {
-            query += ' AND lr.reservation_date_time = ?';
+            query += ' AND DATE(lr.reservation_date_time) = ?';
             params.push(date);
           }
 
           query += `
             UNION ALL
-            SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS username, u.email, 'calculator' AS media_type, cr.model_name AS item_name, cr.calculator_id AS item_id, cr.reservation_date_time AS transaction_date
+            SELECT u.user_id, 
+                   CONCAT(u.first_name, ' ', u.last_name) AS username, 
+                   u.email, 
+                   'calculator' AS media_type, 
+                   cr.model_name AS item_name, 
+                   cr.calculator_id AS item_id, 
+                   DATE_FORMAT(cr.reservation_date_time, '%Y-%m-%d %H:%i:%s') AS transaction_date
             FROM user u
             JOIN calculator_reservations cr ON u.user_id = cr.user_id
             WHERE 1=1
@@ -2036,7 +2060,7 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
             params.push(user_id);
           }
           if (date) {
-            query += ' AND cr.reservation_date_time = ?';
+            query += ' AND DATE(cr.reservation_date_time) = ?';
             params.push(date);
           }
           break;
