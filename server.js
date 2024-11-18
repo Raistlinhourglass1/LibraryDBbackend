@@ -3303,7 +3303,7 @@ else if (req.method === 'POST' && req.url === '/cancel-laptop-reservation') {
 
 
 
-
+/*
 // Define the function to process notifications
 const processNotificationQueue = () => {
   const query = `SELECT * FROM notifications_queue WHERE processed = 0 AND action_type = 'book_ready' LIMIT 10`;
@@ -3423,7 +3423,7 @@ if (req.method === 'POST' && req.url === '/send-book-ready-email') {
   });
 }
 
-
+*/
 
 
 
