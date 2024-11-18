@@ -2735,6 +2735,8 @@ else if (req.method === 'GET' && req.url.startsWith('/get-calculators')) {
 // Cancel Calculator Reservation
 // Backend route handler:
 else if (req.method === 'POST' && req.url === '/cancel-cal-reservation') {
+  console.log("Reached /cancel-cal-reservation route");
+  
   const userData = authenticateToken(req, res);
   if (!userData) return;
 
@@ -2966,6 +2968,99 @@ else if (req.method === 'POST' && req.url === '/cancel-laptop-reservation') {
 
 
 //Justins Code
+
+
+// Route for sending "book ready" notification email
+if (req.method === 'POST' && req.url === '/send-book-ready-email') {
+  const userData = authenticateToken(req, res); // Extract user details from token if needed
+  if (!userData) return;
+
+  let body = '';
+  req.on('data', (chunk) => { body += chunk.toString(); });
+
+  req.on('end', async () => {
+    try {
+      const { userId, bookId } = JSON.parse(body);
+      if (!userId || !bookId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Missing user or book details' }));
+        return;
+      }
+
+      // Query to get user's email and book title from the database
+      const userQuery = `SELECT email FROM users WHERE user_id = ?`;
+      const bookQuery = `SELECT title FROM book WHERE book_id = ?`;
+
+      connection.query(userQuery, [userId], async (userErr, userResults) => {
+        if (userErr || userResults.length === 0) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ message: 'User not found or database error' }));
+          return;
+        }
+
+        const userEmail = userResults[0].email;
+
+        connection.query(bookQuery, [bookId], async (bookErr, bookResults) => {
+          if (bookErr || bookResults.length === 0) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Book not found or database error' }));
+            return;
+          }
+
+          const bookTitle = bookResults[0].title;
+
+          const transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: 465,
+            secure: true,
+            auth: {
+              user: 'hendrixjustin908@gmail.com',
+              pass: 'lblh rxzb hyxz fwai',
+            }
+          });
+
+          const mailOptions = {
+            from: 'hendrixjustin908@gmail.com',
+            to: userEmail,
+            subject: 'Your Reserved Book is Ready for Pickup!',
+            text: `Hello! The book "${bookTitle}" is now available for pickup.`
+          };
+
+          try {
+            await transporter.sendMail(mailOptions);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Book ready email sent successfully' }));
+          } catch (emailError) {
+            console.error('Error sending book ready email:', emailError);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Failed to send book ready email', error: emailError.message }));
+          }
+        });
+      });
+    } catch (error) {
+      console.error('Error processing request data:', error);
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Invalid request data' }));
+    }
+  });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
