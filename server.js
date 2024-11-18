@@ -3344,7 +3344,7 @@ const processNotificationQueue = () => {
 };
 
 // Schedule processNotificationQueue to run every minute
-setInterval(processNotificationQueue, 60000); // 60000ms = 1 minute
+setInterval(processNotificationQueue, 30000); // 60000ms = 1 minute
 
 
 
