@@ -3319,7 +3319,7 @@ const processNotificationQueue = () => {
 
       try {
         // Call the /send-book-ready-email route to send the email notification
-        const response = await axios.post(`https://librarydbbackend.onrender.com/send-book-ready-email`, {
+        const response = await axios.post(`${process.env.API_BASE_URL}/send-book-ready-email`, {
           userId: user_id,
           bookId: book_id
         });
@@ -3344,18 +3344,7 @@ const processNotificationQueue = () => {
 };
 
 // Schedule processNotificationQueue to run every minute
-setInterval(processNotificationQueue, 30000); // 60000ms = 1 minute
-
-
-
-
-
-
-
-
-
-
-
+setInterval(processNotificationQueue, 30000); // 30000ms = 30 seconds for testing
 
 // Route for sending "book ready" notification email
 if (req.method === 'POST' && req.url === '/send-book-ready-email') {
@@ -3396,18 +3385,19 @@ if (req.method === 'POST' && req.url === '/send-book-ready-email') {
 
           const bookTitle = bookResults[0].title;
 
+          // Nodemailer transporter using environment variables
           const transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 465,
+            host: process.env.SMTP_HOST,
+            port: parseInt(process.env.SMTP_PORT),
             secure: true,
             auth: {
-              user: 'hendrixjustin908@gmail.com',
-              pass: 'lblh rxzb hyxz fwai',
+              user: process.env.SMTP_USER,
+              pass: process.env.SMTP_PASS,
             }
           });
 
           const mailOptions = {
-            from: 'hendrixjustin908@gmail.com',
+            from: process.env.SMTP_USER,
             to: userEmail,
             subject: 'Your Reserved Book is Ready for Pickup!',
             text: `Hello! The book "${bookTitle}" is now available for pickup.`
@@ -3431,8 +3421,6 @@ if (req.method === 'POST' && req.url === '/send-book-ready-email') {
     }
   });
 }
-
-
 
 
 
