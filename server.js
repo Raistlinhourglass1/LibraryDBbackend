@@ -3444,10 +3444,10 @@ if (req.method === 'POST' && req.url === '/staff') {
   req.on('end', async () => {
     try {
       // Parse the JSON body
-      const { first_name, last_name, email, phone_number, position, status, salary, notes } = JSON.parse(body);
+      const { first_name, last_name, email, phone_number, salary, notes } = JSON.parse(body);
 
       // Basic validation
-      if (!first_name || !last_name || !email || !phone_number || !position || !status || salary == null) {
+      if (!first_name || !last_name || !email || !phone_number || salary == null) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Please provide all required fields' }));
         return;
@@ -3455,10 +3455,10 @@ if (req.method === 'POST' && req.url === '/staff') {
 
       // Insert the new staff member into the database
       const query = `
-        INSERT INTO staff (first_name, last_name, email, phone_number, position, status, salary, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO staff (first_name, last_name, email, phone_number, salary, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
       `;
-      const params = [first_name, last_name, email, phone_number, position, status, salary, notes];
+      const params = [first_name, last_name, email, phone_number, salary, notes];
 
       connection.query(query, params, (err, result) => {
         if (err) {
