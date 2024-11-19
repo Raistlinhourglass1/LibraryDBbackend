@@ -1398,7 +1398,7 @@ if (req.method === 'PUT' && req.url === '/restore-periodical') {
 
 
 // Cancel reservation route
-else if (req.method === 'POST' && req.url === '/cancel-reservation') {
+else if (req.method === 'POST' && req.url === '/cancel-room-reservation') {
   const userData = authenticateToken(req, res);
   if (!userData) return;
 
@@ -3597,6 +3597,8 @@ if (req.method === 'GET' && req.url === '/booktable_reservations') {
   }
 }
 
+/*
+
 // POST /cancel-reservation - Cancel a reservation by ID
 else if (req.method === 'POST' && req.url === '/cancel-reservation') {
   let body = '';
@@ -3622,6 +3624,7 @@ else if (req.method === 'POST' && req.url === '/cancel-reservation') {
     }
   });
 }
+  */
 
 
 
