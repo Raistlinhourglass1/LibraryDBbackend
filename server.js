@@ -564,13 +564,6 @@ const server = http.createServer(async (req, res) => {
   
     //send audiobook data to server
   if (req.method === 'POST' && req.url === '/catalog-entry/audiobook') {
-    // Authenticate the request using JWT token (same as in the ProfilePage)
-    const user = authenticateToken(req, res);
-    if (!user) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Authentication required' }));
-        return; // If the token is invalid or missing, return
-    }
 
     // Handle the multipart/form-data (file upload)
     upload.single('abFile')(req, res, (err) => {
