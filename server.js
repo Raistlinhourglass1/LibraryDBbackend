@@ -288,7 +288,7 @@ const server = http.createServer(async (req, res) => {
     ////get all periodicals
   if (req.method === 'GET' && req.url.startsWith('/get-all-periodicals')) {
    
-    const sql = `SELECT *, 'periodical' AS source FROM periodicaL;
+    const sql = `SELECT *, 'periodical' AS source FROM periodical;
   `;
 
   connection.query(sql, (error, results) => {
@@ -980,6 +980,91 @@ if (req.method === 'GET' && req.url === '/latest-entries') {
 
 ///////LATEST ENTRIES BOOKS END
 
+//////GET CHECKED OUT BOOKS VIEW START
+
+if (req.method === 'GET' && req.url === '/checked-out-books') {
+
+  const sql = `
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY c.date_borrowed) AS id,  -- New ID column counting the rows
+        b.book_title, 
+        b.author, 
+        u.first_name, 
+        u.last_name, 
+        CONCAT(u.first_name, ' ', u.last_name) AS full_name, 
+        c.date_borrowed, 
+        c.date_due,
+        CASE 
+            WHEN c.date_due < NOW() THEN 'Yes' 
+            ELSE 'No' 
+        END AS is_overdue  -- New column to check if the book is overdue
+    FROM books_checked_out c
+    JOIN book b ON c.book_id = b.book_id
+    JOIN user u ON c.user_id = u.user_id;
+  `;
+
+  connection.query(sql, (error, results) => {
+    if (error) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: 'Database error' }));
+      return;
+    }
+
+    if (results.length === 0) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify([])); // Return an empty array if no books are found
+      return;
+    }
+
+    console.log('Backend query results:', results);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results));
+  });
+}
+
+/////CHECKED OUT BOOKS VIEW END
+
+
+//////GET RESERVED BOOKS VIEW START
+
+if (req.method === 'GET' && req.url === '/reserved-books') {
+  const sql = `
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY r.date_reserved) AS id,  -- New ID column counting the rows
+        b.book_title, 
+        b.author, 
+        u.first_name, 
+        u.last_name, 
+        r.date_reserved, 
+        r.queue_position
+    FROM books_reserved r
+    JOIN book b ON r.book_id = b.book_id
+    JOIN user u ON r.user_id = u.user_id;
+`;
+
+  connection.query(sql, (error, results) => {
+    if (error) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: 'Database error' }));
+      return;
+    }
+
+    if (results.length === 0) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify([])); // Return an empty array if no books are found
+      return;
+    }
+
+    console.log('Backend query results:', results);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results));
+  });
+}
+
+/////RESERVED BOOKS VIEW END
+
 
 /////////ADD BOOK TO LIST
 if (req.method === 'POST' && req.url === '/add-to-list') {
@@ -1062,6 +1147,44 @@ if (req.method === 'GET' && req.url.startsWith('/user-list')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(results));
     });
+}
+
+////CHECK USER LIST END
+
+////CHECK ENTIRE USER LIST 
+
+
+if (req.method === 'GET' && req.url === '/all-user-list') {
+  const decoded = authenticateToken(req, res);
+  if (!decoded) return;
+
+  console.log("Decoded token:", decoded);
+
+  const sql = `
+    SELECT ul.*, b.book_title, b.author
+    FROM user_list ul
+    INNER JOIN book b ON ul.book_id = b.book_id
+    WHERE ul.user_id = ?
+  `;
+
+  connection.query(sql, [decoded.user_ID], (error, results) => {
+    if (error) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: 'Database error' }));
+      return;
+    }
+
+    if (results.length === 0) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify([])); // Return an empty array if no books are found
+      return;
+    }
+
+    console.log('Backend query results:', results);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results));
+  });
 }
 
 ////CHECK USER LIST END
@@ -1282,9 +1405,9 @@ if (req.method === 'PUT' && req.url === '/soft-delete-periodical') {
     }
 
     const data = JSON.parse(Buffer.concat(buffers).toString());
-    const { book_id } = data;
+    const { periodical_id } = data;
 
-    if (!book_id) {
+    if (!periodical_id) {
       res.writeHead(400);
       res.end(JSON.stringify({ message: 'Book ID is required' }));
       return;
@@ -1293,7 +1416,7 @@ if (req.method === 'PUT' && req.url === '/soft-delete-periodical') {
     // Update the deleted column to 1 (true)
     const query = `UPDATE periodical SET deleted = 1 WHERE periodical_id = ?`;
     
-    connection.query(query, [book_id], (err, result) => {
+    connection.query(query, [periodical_id], (err, result) => {
       if (err) {
         console.error('Database Error:', err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -1320,9 +1443,9 @@ if (req.method === 'PUT' && req.url === '/restore-periodical') {
     }
 
     const data = JSON.parse(Buffer.concat(buffers).toString());
-    const { book_id } = data;
+    const { periodical_id } = data;
 
-    if (!book_id) {
+    if (!periodical_id) {
       res.writeHead(400);
       res.end(JSON.stringify({ message: 'Book ID is required' }));
       return;
@@ -1331,7 +1454,7 @@ if (req.method === 'PUT' && req.url === '/restore-periodical') {
     // Update the deleted column to 0 (false) to restore the book
     const query = `UPDATE periodical SET deleted = 0 WHERE periodical_id = ?`;
     
-    connection.query(query, [book_id], (err, result) => {
+    connection.query(query, [periodical_id], (err, result) => {
       if (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Error restoring book' }));
