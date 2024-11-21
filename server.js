@@ -391,7 +391,9 @@ const server = http.createServer(async (req, res) => {
       }
   
       // Update the deleted column to 1 (true)
-      const query = `UPDATE book SET deleted, book_status = 'deleted' WHERE book_id = ?`;
+      const query = `UPDATE book 
+      SET deleted = 1, book_status = 'deleted' 
+      WHERE book_id = 2109;`;
       
       connection.query(query, [book_id], (err, result) => {
         if (err) {
