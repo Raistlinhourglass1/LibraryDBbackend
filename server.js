@@ -391,7 +391,7 @@ const server = http.createServer(async (req, res) => {
       }
   
       // Update the deleted column to 1 (true)
-      const query = `UPDATE book SET deleted = 1 WHERE book_id = ?`;
+      const query = `UPDATE book SET deleted, book_status = 'deleted' WHERE book_id = ?`;
       
       connection.query(query, [book_id], (err, result) => {
         if (err) {
@@ -429,7 +429,7 @@ const server = http.createServer(async (req, res) => {
       }
   
       // Update the deleted column to 0 (false) to restore the book
-      const query = `UPDATE book SET deleted = 0 WHERE book_id = ?`;
+      const query = `UPDATE book SET deleted = 0, book_status = 'available' WHERE book_id = ?`;
       
       connection.query(query, [book_id], (err, result) => {
         if (err) {
@@ -473,7 +473,7 @@ const server = http.createServer(async (req, res) => {
         }
   
         // Check the status of the specified book
-        const statusQuery = `SELECT isbn, book_status FROM book WHERE book_id = ?`;
+        const statusQuery = `SELECT isbn, book_status, book_title, author FROM book WHERE book_id = ?`;
         connection.query(statusQuery, [book_id], (err, statusResult) => {
           if (err || statusResult.length === 0) {
             res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -481,7 +481,7 @@ const server = http.createServer(async (req, res) => {
             return;
           }
   
-          const { isbn, book_status } = statusResult[0];
+          const { isbn, book_status, book_title, author  } = statusResult[0];
   
           const handleReservationInsert = (selectedBookId) => {
             // Create reservation record
@@ -491,13 +491,13 @@ const server = http.createServer(async (req, res) => {
             dueDate.setDate(dateBorrowed.getDate() + 14);
   
             const insertReservationQuery = `
-              INSERT INTO book_reservations (user_id, book_id, reservation_status, queue_position, date_borrowed, date_due)
-              VALUES (?, ?, 'fulfilled', 0, ?, ?);
+              INSERT INTO book_reservations (user_id, book_id, reservation_status, queue_position, date_borrowed, date_due, reservation_type, book_title, book_author)
+              VALUES (?, ?, 'fulfilled', 0, ?, ?, 'book', ?, ?);
             `;
   
             connection.query(
               insertReservationQuery,
-              [userId, selectedBookId, dateBorrowed, dueDate],
+              [userId, selectedBookId, dateBorrowed, dueDate, book_title, author],
               (err, reservationResult) => {
                 if (err) {
                   console.error('Error creating reservation record:', err);
@@ -1263,7 +1263,7 @@ if (req.method === 'PUT' && req.url === '/soft-delete-audiobook') {
     }
 
     // Update the deleted column to 1 (true)
-    const query = `UPDATE audiobook SET deleted = 1 WHERE audiobook_id = ?`;
+    const query = `UPDATE audiobook SET deleted = 1, availability = 0 WHERE audiobook_id = ?`;
     
     connection.query(query, [book_id], (err, result) => {
       if (err) {
@@ -1301,7 +1301,7 @@ if (req.method === 'PUT' && req.url === '/restore-audiobook') {
     }
 
     // Update the deleted column to 0 (false) to restore the book
-    const query = `UPDATE audiobook SET deleted = 0 WHERE audiobook_id = ?`;
+    const query = `UPDATE audiobook SET deleted = 0, availability = 1 WHERE audiobook_id = ?`;
     
     connection.query(query, [book_id], (err, result) => {
       if (err) {
@@ -1339,7 +1339,7 @@ if (req.method === 'PUT' && req.url === '/soft-delete-ebook') {
     }
 
     // Update the deleted column to 1 (true)
-    const query = `UPDATE ebook SET deleted = 1 WHERE ebook_id = ?`;
+    const query = `UPDATE ebook SET deleted = 1, availability = 0 WHERE ebook_id = ?`;
     
     connection.query(query, [book_id], (err, result) => {
       if (err) {
@@ -1377,7 +1377,7 @@ if (req.method === 'PUT' && req.url === '/restore-ebook') {
     }
 
     // Update the deleted column to 0 (false) to restore the book
-    const query = `UPDATE ebook SET deleted = 0 WHERE ebook_id = ?`;
+    const query = `UPDATE ebook SET deleted = 0, availability = 1 WHERE ebook_id = ?`;
     
     connection.query(query, [book_id], (err, result) => {
       if (err) {
@@ -1414,7 +1414,7 @@ if (req.method === 'PUT' && req.url === '/soft-delete-periodical') {
     }
 
     // Update the deleted column to 1 (true)
-    const query = `UPDATE periodical SET deleted = 1 WHERE periodical_id = ?`;
+    const query = `UPDATE periodical SET deleted = 1, availability = 0 WHERE periodical_id = ?`;
     
     connection.query(query, [periodical_id], (err, result) => {
       if (err) {
@@ -1452,7 +1452,7 @@ if (req.method === 'PUT' && req.url === '/restore-periodical') {
     }
 
     // Update the deleted column to 0 (false) to restore the book
-    const query = `UPDATE periodical SET deleted = 0 WHERE periodical_id = ?`;
+    const query = `UPDATE periodical SET deleted = 0, availability = 1 WHERE periodical_id = ?`;
     
     connection.query(query, [periodical_id], (err, result) => {
       if (err) {
@@ -2394,19 +2394,22 @@ else if (req.method === 'POST' && req.url.startsWith('/_bookReservation')) {
       }
 
       // Query to get the ISBN for the provided book_id
-      const getIsbnQuery = `
-        SELECT isbn FROM book WHERE book_id = ?
+      const getBookDetailsQuery = `
+        SELECT isbn, book_title, author
+        FROM book
+        WHERE book_id = ?
       `;
 
-      connection.query(getIsbnQuery, [book_id], (isbnError, isbnResults) => {
-        if (isbnError || isbnResults.length === 0) {
-          console.error('Error fetching ISBN:', isbnError);
+      connection.query(getBookDetailsQuery, [book_id], (bookError, bookResults) => {
+        if (bookError || bookResults.length === 0) {
+          console.error('Error fetching book details:', bookError);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Failed to fetch ISBN for the book' }));
+          res.end(JSON.stringify({ error: 'Failed to fetch book details' }));
           return;
         }
 
-        const isbn = isbnResults[0].isbn;
+        const { isbn, book_title, author } = bookResults[0];
+
 
         // Query to find the maximum queue_position for the same ISBN with pending status
         const maxQueueQuery = `
@@ -2435,13 +2438,13 @@ else if (req.method === 'POST' && req.url.startsWith('/_bookReservation')) {
           dateDue.setDate(dateBorrowed.getDate() + 14); // Set due date to 2 weeks from now
 
           const insertReservationQuery = `
-            INSERT INTO book_reservations (book_id, user_id, reservation_status, date_borrowed, date_due, queue_position)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO book_reservations (book_id, user_id, reservation_status, date_borrowed, date_due, queue_position, reservation_type, book_title, book_author)
+            VALUES (?, ?, ?, ?, ?, ?, 'book', ?, ?)
           `;
 
           connection.query(
             insertReservationQuery,
-            [book_id, userData.user_ID, reservationStatus, dateBorrowed, dateDue, newQueuePosition],
+            [book_id, userData.user_ID, reservationStatus, dateBorrowed, dateDue, newQueuePosition, book_title, author],
             (insertError, insertResults) => {
               if (insertError) {
                 console.error('Error inserting reservation:', insertError);
