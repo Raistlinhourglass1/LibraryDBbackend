@@ -1875,43 +1875,12 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
 
   req.on('end', () => {
     const data = JSON.parse(body);
-    const { specification, date, reservation_type, user_id, topBooks, book_name, book_isbn, staff_id, teach_email, laptop_id, calc_id, period_type, room_num, media_type } = data;
+    const { specification, date, start_date, end_date, reservation_type, user_id, topBooks, book_name, book_isbn, staff_id, teach_email, laptop_id, calc_id, period_type, room_num, media_type } = data;
 
     let query = '';
     let params = [];
 
     switch (specification) {
-      case 'room reservations':
-        query = 'SELECT * FROM room_reservations WHERE 1=1';
-        if (date) {
-          query += ' AND DATE(reservation_date) = ?';
-          params.push(date);
-        }
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        if (room_num) {
-          query += ' AND room_number = ?';
-          params.push(room_num);
-        }
-        break;
-
-      case 'book reservations':
-        query = 'SELECT * FROM book_reservations WHERE 1=1';
-        if (date) {
-          query += ' AND DATE(reservation_date_time) = ?';
-          params.push(date);
-        }
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        if (book_name) {
-          query += ' AND book_title = ?';
-          params.push(book_name);
-        }
-        break;
 
         case 'most liked':
           const limit = topBooks || 5;  // Default to 5 if no value is selected
@@ -1937,357 +1906,169 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
           params.push(limit);  // Add the limit value dynamically
           break;
 
-      case 'feedback':
-        query = 'SELECT * FROM feedback WHERE 1=1';
-        if (date) {
-          query += ' AND DATE(date_submitted) = ?';
-          params.push(date);
-        }
-        if (book_name) {
-          query += ' AND book_name = ?';
-          params.push(book_name);
-        }
-        break;
-
-      case 'laptops':
-        query = 'SELECT * FROM Laptops WHERE 1=1';
-        if (laptop_id) {
-          query += ' AND laptop_id = ?';
-          params.push(laptop_id);
-        }
-        break;
-
-      case 'calculators':
-        query = 'SELECT * FROM Calculators WHERE 1=1';
-        if (calc_id) {
-          query += ' AND calculator_id = ?';
-          params.push(calc_id);
-        }
-        break;
-
-      case 'books':
-        query = 'SELECT * FROM book WHERE 1=1';
-        if (date) {
-          query += ' AND DATE(date_added) = ?';
-          params.push(date);
-        }
-        if (book_name) {
-          query += ' AND book_title = ?';
-          params.push(book_name);
-        }
-        if (book_isbn) {
-          query += ' AND isbn = ?';
-          params.push(book_isbn);
-        }
-        break;
-
-      case 'audiobooks':
-          query = 'SELECT * FROM audiobook WHERE 1=1';
-          if (date) {
-            query += ' AND DATE(date_added) = ?';
-            params.push(date);
-          }
-          if (book_name) {
-            query += ' AND audio_title = ?';
-            params.push(book_name);
-          }
-          if (book_isbn) {
-            query += ' AND audio_isbn = ?';
-            params.push(book_isbn);
-          }
-          break;
-
-      case 'periodical':
-          query = 'SELECT * FROM periodical WHERE 1=1';
-          if (date) {
-            query += ' AND DATE(issue_date) = ?';
-            params.push(date);
-          }
-          if (period_type) {
-            query += ' AND periodical_type = ?';
-            params.push(period_type);
-          }
-          break;
-      
-      case 'ebook':
-          query = 'SELECT * FROM ebook WHERE 1=1';
-          if (date) {
-            query += ' AND DATE(date_added) = ?';
-            params.push(date);
-          }
-          if (book_name) {
-            query += ' AND ebook_title = ?';
-            params.push(book_name);
-          }
-          if (book_isbn) {
-            query += ' AND ebook_isbn = ?';
-            params.push(book_isbn);
-          }
-          break;
       
           case 'catalog':
-            let baseQuery = `
-                SELECT * FROM (
-                    SELECT book_title AS title, isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'book' AS media_type FROM book
-                    UNION ALL
-                    SELECT audio_title AS title, audio_isbn AS isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'audiobook' AS media_type FROM audiobook
-                    UNION ALL
-                    SELECT periodical_title AS title, periodical_issn AS isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'periodical' AS media_type FROM periodical
-                    UNION ALL
-                    SELECT ebook_title AS title, ebook_isbn AS isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'ebook' AS media_type FROM ebook
-                ) AS combined_media
-                WHERE 1=1
-            `;
+        let baseQuery = `
+            SELECT * FROM (
+                SELECT book_title AS title, isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'book' AS media_type FROM book
+                UNION ALL
+                SELECT audio_title AS title, audio_isbn AS isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'audiobook' AS media_type FROM audiobook
+                UNION ALL
+                SELECT periodical_title AS title, periodical_issn AS isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'periodical' AS media_type FROM periodical
+                UNION ALL
+                SELECT ebook_title AS title, ebook_isbn AS isbn, DATE_FORMAT(date_added, '%Y-%m-%d %H:%i:%s') AS date_added, 'ebook' AS media_type FROM ebook
+            ) AS combined_media
+            WHERE 1=1
+        `;
 
-            // Apply media_type filter if provided
-            if (media_type) {
-                baseQuery += ` AND media_type = ?`;
-                params.push(media_type);
-            }
+        if (media_type && media_type !== "all") {
+          baseQuery += ` AND media_type = ?`;
+          params.push(media_type);
+        }
 
-            // Apply date filter if provided
-            if (date) {
-                baseQuery += ` AND DATE(date_added) = ?`;
-                params.push(date);
-            }
+        // Apply date filter or date range
+        if (start_date && end_date) {
+          baseQuery += ` AND DATE(date_added) BETWEEN ? AND ?`;
+          params.push(start_date, end_date);
+        } else if (date) {
+          baseQuery += ` AND DATE(date_added) = ?`;
+          params.push(date);
+        }
 
-            // Debugging: Log final query and parameters
-            console.log("Final query:", baseQuery);
-            console.log("Params:", params);
+        query = baseQuery;
+        break;
 
-            query = baseQuery;
-            break;
+      case 'user transactions':
+        query = '';
+        params = [];
 
+        const appendDateFilter = (baseQuery, tableAlias, columnName) => {
+          if (start_date && end_date) {
+            baseQuery += ` AND DATE(${tableAlias}.${columnName}) BETWEEN ? AND ?`;
+            params.push(start_date, end_date);
+          } else if (date) {
+            baseQuery += ` AND DATE(${tableAlias}.${columnName}) = ?`;
+            params.push(date);
+          }
+          return baseQuery;
+        };
+        
+        if (reservation_type === 'book' || !reservation_type) {
+          query += `
+            SELECT u.user_id, 
+                  CONCAT(u.first_name, ' ', u.last_name) AS username, 
+                  u.email, 
+                  'book' AS reservation_type, 
+                  br.book_title AS item_name, 
+                  br.book_id AS item_id, 
+                  DATE_FORMAT(br.reservation_date_time, '%Y-%m-%d %H:%i:%s') AS transaction_date
+            FROM user u
+            JOIN book_reservations br ON u.user_id = br.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          query = appendDateFilter(query, 'br', 'reservation_date_time');
+        }
+        
+        if (reservation_type === 'room' || !reservation_type) {
+          if (query) query += ' UNION ALL ';
+          query += `
+            SELECT u.user_id, 
+                  CONCAT(u.first_name, ' ', u.last_name) AS username, 
+                  u.email, 
+                  'room' AS reservation_type, 
+                  rr.room_number AS item_name, 
+                  rr.room_number AS item_id, 
+                  DATE_FORMAT(rr.reservation_date, '%Y-%m-%d %H:%i:%s') AS transaction_date
+            FROM user u
+            JOIN room_reservations rr ON u.user_id = rr.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          // Use 'reservation_date' instead of 'reservation_date_time' for room reservations
+          query = appendDateFilter(query, 'rr', 'reservation_date');
+        }
+        
+        if (reservation_type === 'laptop' || !reservation_type) {
+          if (query) query += ' UNION ALL ';
+          query += `
+            SELECT u.user_id, 
+                  CONCAT(u.first_name, ' ', u.last_name) AS username, 
+                  u.email, 
+                  'laptop' AS reservation_type, 
+                  lr.model_name AS item_name, 
+                  lr.laptop_id AS item_id, 
+                  DATE_FORMAT(lr.reservation_date_time, '%Y-%m-%d %H:%i:%s') AS transaction_date
+            FROM user u
+            JOIN laptop_reservations lr ON u.user_id = lr.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          query = appendDateFilter(query, 'lr', 'reservation_date_time');
+        }
+        
+        if (reservation_type === 'calculator' || !reservation_type) {
+          if (query) query += ' UNION ALL ';
+          query += `
+            SELECT u.user_id, 
+                  CONCAT(u.first_name, ' ', u.last_name) AS username, 
+                  u.email, 
+                  'calculator' AS reservation_type, 
+                  cr.model_name AS item_name, 
+                  cr.calculator_id AS item_id, 
+                  DATE_FORMAT(cr.reservation_date_time, '%Y-%m-%d %H:%i:%s') AS transaction_date
+            FROM user u
+            JOIN calculator_reservations cr ON u.user_id = cr.user_id
+            WHERE 1=1
+          `;
+          if (user_id) {
+            query += ' AND u.user_id = ?';
+            params.push(user_id);
+          }
+          query = appendDateFilter(query, 'cr', 'reservation_date_time');
+        }
 
-      //query all reservations/ checkouts from book, rooms, devices
-      case 'transactions':
+        break;
+
+      case 'session activity':
         query = `
-          SELECT 'book' AS media_type, book_title AS item_name, book_id AS item_id, user_id, reservation_date_time AS transaction_date
-          FROM book_reservations
+          SELECT 
+            al.activity_id,
+            al.user_id,
+            CONCAT(u.first_name, ' ', u.last_name) AS username,
+            u.email,
+            al.action,
+            al.description,
+            al.ip_address,
+            al.user_agent,
+            DATE_FORMAT(al.created_at, '%Y-%m-%d %H:%i:%s') AS created_at
+          FROM activity_log al
+          JOIN user u ON al.user_id = u.user_id
           WHERE 1=1
         `;
-        
+
         if (user_id) {
-          query += ' AND user_id = ?';
+          query += ' AND al.user_id = ?';
           params.push(user_id);
         }
-        if (date) {
-          query += ' AND reservation_date_time = ?';
+        if (start_date && end_date) {
+          query += ' AND DATE(al.created_at) BETWEEN ? AND ?';
+          params.push(start_date, end_date);
+        } else if (date) {
+          query += ' AND DATE(al.created_at) = ?';
           params.push(date);
         }
-        
-        query += `
-          UNION ALL
-          SELECT 'room' AS media_type, room_number AS item_name, room_number AS item_id, user_id, reservation_date AS transaction_date
-          FROM room_reservations
-          WHERE 1=1
-        `;
-        
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        if (date) {
-          query += ' AND reservation_date = ?';
-          params.push(date);
-        }
-        
-        query += `
-          UNION ALL
-          SELECT 'laptop' AS media_type, model_name AS item_name, laptop_id AS item_id, user_id, reservation_date_time AS transaction_date
-          FROM laptop_reservations
-          WHERE 1=1
-        `;
-        
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        if (date) {
-          query += ' AND reservation_date_time = ?';
-          params.push(date);
-        }
-        
-        query += `
-          UNION ALL
-          SELECT 'calculator' AS media_type, model_name AS item_name, calculator_id AS item_id, user_id, reservation_date_time AS transaction_date
-          FROM calculator_reservations
-          WHERE 1=1
-        `;
-        
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        if (date) {
-          query += ' AND reservation_date_time = ?';
-          params.push(date);
-        }
+
         break;
-
-
-      case 'staff':
-        query = 'SELECT * FROM staff WHERE 1=1';
-        if (date) {
-          query += ' AND DATE(date_hired) = ?';
-          params.push(date);
-        }
-        if (staff_id) {
-          query += ' AND staff_id = ?';
-          params.push(staff_id);
-        }
-        break;
-      
-      case 'teacher':
-        query = 'SELECT * FROM teacher WHERE 1=1';
-        if (teach_email) {
-          query += ' AND email = ?';
-          params.push(teach_email);
-        }
-        break;
-
-      case 'users':
-        query = 'SELECT * FROM user WHERE 1=1';
-        if (date) {
-          query += ' AND DATE(create_time) = ?';
-          params.push(date);
-        }
-        if (user_id) {
-          query += ' AND user_id = ?';
-          params.push(user_id);
-        }
-        break;
-
-
-        case 'user transactions':
-          query = '';
-          params = [];
-
-          if (reservation_type === 'book' || !reservation_type) {
-            query += `
-              SELECT u.user_id, 
-                    CONCAT(u.first_name, ' ', u.last_name) AS username, 
-                    u.email, 
-                    'book' AS reservation_type, 
-                    br.book_title AS item_name, 
-                    br.book_id AS item_id, 
-                    DATE_FORMAT(br.reservation_date_time, '%Y-%m-%d %H:%i:%s') AS transaction_date
-              FROM user u
-              JOIN book_reservations br ON u.user_id = br.user_id
-              WHERE 1=1
-            `;
-            if (user_id) {
-              query += ' AND u.user_id = ?';
-              params.push(user_id);
-            }
-            if (date) {
-              query += ' AND DATE(br.reservation_date_time) = ?';
-              params.push(date);
-            }
-          }
-
-          if (reservation_type === 'room' || !reservation_type) {
-            if (query) query += ' UNION ALL '; // Add UNION ALL if there's already a query
-            query += `
-              SELECT u.user_id, 
-                    CONCAT(u.first_name, ' ', u.last_name) AS username, 
-                    u.email, 
-                    'room' AS reservation_type, 
-                    rr.room_number AS item_name, 
-                    rr.room_number AS item_id, 
-                    DATE_FORMAT(rr.reservation_date, '%Y-%m-%d %H:%i:%s') AS transaction_date
-              FROM user u
-              JOIN room_reservations rr ON u.user_id = rr.user_id
-              WHERE 1=1
-            `;
-            if (user_id) {
-              query += ' AND u.user_id = ?';
-              params.push(user_id);
-            }
-            if (date) {
-              query += ' AND DATE(rr.reservation_date) = ?';
-              params.push(date);
-            }
-          }
-
-          if (reservation_type === 'laptop' || !reservation_type) {
-            if (query) query += ' UNION ALL ';
-            query += `
-              SELECT u.user_id, 
-                    CONCAT(u.first_name, ' ', u.last_name) AS username, 
-                    u.email, 
-                    'laptop' AS reservation_type, 
-                    lr.model_name AS item_name, 
-                    lr.laptop_id AS item_id, 
-                    DATE_FORMAT(lr.reservation_date_time, '%Y-%m-%d %H:%i:%s') AS transaction_date
-              FROM user u
-              JOIN laptop_reservations lr ON u.user_id = lr.user_id
-              WHERE 1=1
-            `;
-            if (user_id) {
-              query += ' AND u.user_id = ?';
-              params.push(user_id);
-            }
-            if (date) {
-              query += ' AND DATE(lr.reservation_date_time) = ?';
-              params.push(date);
-            }
-          }
-
-          if (reservation_type === 'calculator' || !reservation_type) {
-            if (query) query += ' UNION ALL ';
-            query += `
-              SELECT u.user_id, 
-                    CONCAT(u.first_name, ' ', u.last_name) AS username, 
-                    u.email, 
-                    'calculator' AS reservation_type, 
-                    cr.model_name AS item_name, 
-                    cr.calculator_id AS item_id, 
-                    DATE_FORMAT(cr.reservation_date_time, '%Y-%m-%d %H:%i:%s') AS transaction_date
-              FROM user u
-              JOIN calculator_reservations cr ON u.user_id = cr.user_id
-              WHERE 1=1
-            `;
-            if (user_id) {
-              query += ' AND u.user_id = ?';
-              params.push(user_id);
-            }
-            if (date) {
-              query += ' AND DATE(cr.reservation_date_time) = ?';
-              params.push(date);
-            }
-          }
-
-          break;
-        
-          case 'session activity':
-            query = `
-              SELECT 
-                al.activity_id,
-                al.user_id,
-                CONCAT(u.first_name, ' ', u.last_name) AS username,
-                u.email,
-                al.action,
-                al.description,
-                al.ip_address,
-                al.user_agent,
-                DATE_FORMAT(al.created_at, '%Y-%m-%d %H:%i:%s') AS created_at
-              FROM activity_log al
-              JOIN user u ON al.user_id = u.user_id
-              WHERE 1=1
-            `;
-          
-            // Apply filters if any
-            if (user_id) {
-              query += ' AND al.user_id = ?';
-              params.push(user_id);
-            }
-            if (date) {
-              query += ' AND DATE(al.created_at) = ?';
-              params.push(date);
-            }
-          
-            break;
           
 
 
@@ -2314,6 +2095,7 @@ else if (req.method === 'POST' && req.url === '/get-reports') {
   });
   return;
 }
+
 
 
 //                                                     END OF NICKS CODE
