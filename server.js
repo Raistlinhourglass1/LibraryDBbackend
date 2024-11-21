@@ -389,11 +389,13 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ message: 'Book ID is required' }));
         return;
       }
+
+      console.log("querying book deletion with :", book_id);
   
       // Update the deleted column to 1 (true)
       const query = `UPDATE book 
       SET deleted = 1, book_status = 'deleted' 
-      WHERE book_id = 2109;`;
+      WHERE book_id = ?;`;
       
       connection.query(query, [book_id], (err, result) => {
         if (err) {
