@@ -1470,6 +1470,62 @@ if (req.method === 'PUT' && req.url === '/restore-periodical') {
   }
 }
 
+//////NOTIFICATION START 
+
+if (req.method === 'GET' && req.url === '/notifications') {
+  const decoded = authenticateToken(req, res);
+  if (!decoded) return;
+
+  console.log("Decoded token:", decoded);
+
+  
+  //processed = 0 means that the notif hasnt been 'read' yet.
+  const query = `
+    SELECT n.id, n.book_id, n.processed, n.action_type, b.book_title, b.author
+      FROM notifications_queue n
+      JOIN book b ON n.book_id = b.book_id
+      WHERE n.user_id = ? AND n.processed = '0'; 
+  `;
+  
+  connection.query(query, [decoded.user_ID], (err, results) => {
+    if (err) {
+      console.error('Error fetching notifications:', err);
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: 'Error fetching notifications' }));
+      return;
+    }
+
+    // Respond with the notifications
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ notifications: results }));
+  });
+}
+
+// Mark Notifications as 'notified'
+if (req.method === 'POST' && req.url === '/notifications-notified') {
+  const decoded = authenticateToken(req, res);
+  if (!decoded) return;
+
+  console.log("Decoded token:", decoded);
+
+  const query = `
+    UPDATE notifications_queue SET processed = '1' WHERE user_id = ? AND processed = '0';
+  `;
+  
+  connection.query(query, [decoded.user_ID], (err) => {
+    if (err) {
+      console.error('Error updating notification status:', err);
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: 'Error updating notification status' }));
+      return;
+    }
+
+    res.statusCode = 200;
+    res.end(JSON.stringify({ message: 'Notifications marked as notified' }));
+  });
+}
+
+///NOTIFICATION END
 
   
   
